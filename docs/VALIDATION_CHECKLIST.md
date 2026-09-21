@@ -69,3 +69,24 @@ Success rates from `evaluate.py` with contact confirmation, with and without ran
 the termination-reason histogram; and how often the collision proxies fire. Do not compare the new
 success rate directly with the thesis' 0.97 peak: that number is defined by the finger-gap proxy in a
 world without collision geometry.
+
+
+## Local Isaac Sim 5.1 headless results (2026-09-22, laptop, not Vast.ai)
+
+Run with the real physics backend, `no_randomization.json`. This is the first time the code ran against real PhysX rather than the fake backend, and it is **not a pass**.
+
+| Check | Result | Note |
+|---|---|---|
+| Unit tests (fake backend) | 49/49 pass | says nothing about PhysX behaviour |
+| Contact sensor API (`get_contact_force_matrix`) | works | sensor is created and read |
+| Hold-pose stability | FAIL | one 20-step window peaked at 2.17 rad/s (threshold 2.0); likely settling/self-collision jitter, not yet investigated |
+| Self-collision check | not conclusive | the script's probe never reached a self-collision; needs rewriting |
+| Table check | vacuous | arm never got near the table; needs rewriting |
+| Scripted demo grasp | FAIL, 0/5 | see below |
+
+**Stale-asset pitfall.** A cached USD from an earlier conversion (base at z 0.80 instead of 0.78) makes every episode end at step 0 with "Target Lost". Always regenerate the USD (`assets/convert_urdf_to_usd.py`) on a new machine or point `UR5E_USD_PATH` at a fresh one. `setup_vastai.sh` regenerates it.
+
+**Demo grasp findings.**
+1. The pad collision boxes are 6 cm tall and centred on the tool point, so with active colliders the tool point cannot go below about table + 3 cm (ee_z about 0.81). The old `close_dist_m = 0.02` was unreachable and the controller stalled in `descend`. Fixed: `close_dist_m = 0.04` (the environment's own success distance is 0.05).
+2. After that fix the gripper does reach the close phase, and the finger joint closes to 0.70 rad. But the pad frames stay about 5 cm apart along the closing axis even fully closed, and the pads are vertically offset from each other by about 3 cm. A 2 cm cube cannot be squeezed by that geometry. In one run the cube was shoved about 4 cm sideways while both pad sensors read 0 N.
+3. Conclusion: the gripper collision geometry in the converted URDF (simple boxes at the link origins, not the real finger surfaces) does not support a physically meaningful grasp of the 2 cm cube. Until the pad collision geometry is rebuilt (or the Robotiq 2F-140 asset from Isaac Sim is used), contact-confirmed success cannot be reached, so **no training run is meaningful yet**, and no claim of "contact-verified grasping" should be made from this repo.

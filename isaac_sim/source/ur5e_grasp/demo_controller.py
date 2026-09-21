@@ -1,4 +1,4 @@
-"""Scripted reach-and-grasp controller used to generate demonstrations.
+﻿"""Scripted reach-and-grasp controller used to generate demonstrations.
 
 The thesis' Gazebo pilot got its reliability from a classical MoveIt planner. There is no
 ROS/MoveIt inside Isaac Sim, so this uses damped-least-squares inverse kinematics on the
@@ -28,7 +28,7 @@ def _wrap(angle):
 
 
 class ReachGraspDemoController:
-    def __init__(self, above_m=0.08, close_dist_m=0.02, pre_dist_m=0.03, arc_radius_m=0.5,
+    def __init__(self, above_m=0.08, close_dist_m=0.04, pre_dist_m=0.03, arc_radius_m=0.5,
                  arc_height_m=0.35, arc_step_rad=0.12, axis_target=(0.0, 0.0, -1.0), axis_gain=1.0):
         self.above_m = above_m
         self.close_dist_m = close_dist_m
