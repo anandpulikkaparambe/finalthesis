@@ -352,7 +352,19 @@ def main():
                               'the deterministic argmax action -- added 2026-09-11 at user request so '
                               'repeated runs from the same start pose do not retrace the identical '
                               'trajectory every time.')
+    parser.add_argument('--safety-filter', action='store_true',
+                         help='Opt-in: predict each step with the calibrated UR5e model and scale down or refuse steps that would cause self-collision or table contact (see isaac_sim/source/ur5e_grasp/safety_filter.py). Off by default.')
+    parser.add_argument('--table-z-base', type=float, default=0.0,
+                         help='Table plane height in the robot base frame (m); 0.0 when the arm is mounted on the table top. Measure it before using --safety-filter.')
     args, _ = parser.parse_known_args()
+
+    safety_filter = None
+    if args.safety_filter:
+        import os as _os
+        import sys as _sys
+        _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'isaac_sim', 'source'))
+        from ur5e_grasp.safety_filter import SafetyFilter
+        safety_filter = SafetyFilter(table_z_base=args.table_z_base)
 
     rclpy.init()
     node = Phase2UnclampedRunNode(args.checkpoint, legacy=args.legacy)
@@ -399,6 +411,14 @@ def main():
 
             action, _ = node.model.predict(obs, deterministic=not args.stochastic)
             raw_delta = np.clip(action[:6], -MAX_JOINT_DELTA_RAD, MAX_JOINT_DELTA_RAD)
+            if safety_filter is not None:
+                filtered, why = safety_filter.filter(node.current_joint_positions, raw_delta)
+                if filtered is None:
+                    node.get_logger().error(f"[step {i:02d}] Safety filter blocked the step ({why}) -- stopping run.")
+                    break
+                if why:
+                    node.get_logger().warn(f"[step {i:02d}] Safety filter: {why}")
+                raw_delta = filtered
             gripper_raw = float(action[6])
             closedness = float(np.clip((gripper_raw + math.pi) / (2 * math.pi), 0.0, 1.0))
             gripper_target_m = GRIPPER_OPEN_M - closedness * (GRIPPER_OPEN_M - GRIPPER_CLOSED_M)
