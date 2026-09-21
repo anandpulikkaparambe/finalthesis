@@ -9,11 +9,14 @@
 #   NUM_ENVS=4 TOTAL_TIMESTEPS=200000 DEVICE=cuda ./vastai/train_entrypoint.sh
 set -euo pipefail
 
-NUM_ENVS="${NUM_ENVS:-1}"
+NUM_ENVS="${NUM_ENVS:-8}"
 TOTAL_TIMESTEPS="${TOTAL_TIMESTEPS:-100000}"
 DEVICE="${DEVICE:-cuda}"
 RESUME="${RESUME:-}"
 LOG_DIR="${LOG_DIR:-./rl_logs}"
+CONFIG="${CONFIG:-configs/default.json}"
+SEED="${SEED:-0}"
+BUFFER_SIZE="${BUFFER_SIZE:-1000000}"
 
 cd "$(dirname "$0")/.."
 source /venv/isaac51/bin/activate
@@ -32,5 +35,8 @@ python scripts/train.py \
   --device "$DEVICE" \
   --log-dir "$LOG_DIR" \
   --headless \
+  --config "$CONFIG" \
+  --seed "$SEED" \
+  --buffer-size "$BUFFER_SIZE" \
   "${RESUME_ARG[@]}" \
   2>&1 | tee "$LOG_DIR/train.log"

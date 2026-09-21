@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "source"))
 parser = argparse.ArgumentParser()
 parser.add_argument("--checkpoint", required=True)
 parser.add_argument("--episodes", type=int, default=5)
+parser.add_argument("--config", type=str, default="")
 parser.add_argument("--no-headless", dest="headless", action="store_false")
 parser.set_defaults(headless=True)
 args = parser.parse_args()
@@ -21,7 +22,9 @@ from stable_baselines3 import SAC
 
 from ur5e_grasp.ur5e_grasp_env import Ur5eGraspEnv
 
-env = Ur5eGraspEnv(env_id=0, headless=args.headless, log_dir="./rl_logs/play")
+from ur5e_grasp.config import load_config
+
+env = Ur5eGraspEnv(env_id=0, headless=args.headless, log_dir="./rl_logs/play", config=load_config(args.config))
 model = SAC.load(
     args.checkpoint,
     env=env,

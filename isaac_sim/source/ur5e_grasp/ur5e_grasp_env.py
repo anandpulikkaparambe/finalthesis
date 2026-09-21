@@ -1,6 +1,17 @@
 """Gymnasium environment for the UR5e + Robotiq-140 reach-and-grasp task, running
 natively in Isaac Sim.
 
+THESIS-DRIVEN VERSION. Compared with the environment that produced the thesis' headline
+result (isaac_sim_headline_run/, commit cc9ae661 of the original repository) this file:
+  * enables PhysX self-collision and filters the gripper-internal pairs
+  * confirms grasps from finger-pad contact forces held over several steps (no gap proxy)
+  * adds self-collision / table / joint-limit / energy terms to the reward (reward.py)
+  * adds domain randomization, action delay and start-pose jitter (randomization.py)
+  * takes all tunables from config.py and a seed
+Nothing here has been trained or run inside Isaac Sim yet: validate with
+scripts/smoke_test.py and scripts/validate_collisions.py before any long run.
+
+
 This replaces remoteservertraining-UR5e/src/ur3e_rl/ur3e_rl/ur3e_env.py's ROS2 +
 Gazebo + MoveIt2 stack. The observation space, action space, reward shaping,
 termination/kill-switch logic and curriculum-widened spawn radius are ported
@@ -68,6 +79,13 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+from ur5e_grasp import kinematics as K
+from ur5e_grasp import spec
+from ur5e_grasp.config import EnvConfig
+from ur5e_grasp.contact import GraspContactSensor, HoldTracker, gap_proxy_contact, pads_in_contact
+from ur5e_grasp.randomization import DomainRandomizer
+from ur5e_grasp.reward import StepQuantities, TerminalInputs, apply_floor, classify_terminal, dense_reward
+
 
 # The converted USD asset is a generated build artifact (like the sibling Gazebo repo's
 # gitignored build/install/log dirs), not checked into this repo -- see
@@ -90,6 +108,11 @@ ARM_JOINT_NAMES = [
     "wrist_1_joint", "wrist_2_joint", "wrist_3_joint",
 ]
 GRIPPER_DRIVE_JOINT = "finger_joint"
+GRIPPER_LINKS = (
+    "robotiq_arg2f_base_link", "left_outer_knuckle", "left_outer_finger", "left_inner_finger",
+    "left_inner_finger_pad", "left_inner_knuckle", "right_inner_knuckle", "right_outer_knuckle",
+    "right_outer_finger", "right_inner_finger", "right_inner_finger_pad",
+)
 LEFT_PAD_LINK = "left_inner_finger_pad"
 RIGHT_PAD_LINK = "right_inner_finger_pad"
 BASE_LINK = "base_link"
@@ -165,10 +188,14 @@ class Ur5eGraspEnv(gym.Env):
         headless: bool = True,
         usd_path: str = DEFAULT_USD_PATH,
         log_dir: str = "./rl_logs",
+        config: EnvConfig = None,
+        seed: int = 0,
     ):
         super().__init__()
         self.env_id = env_id
         self.usd_path = usd_path
+        self.cfg = config if config is not None else EnvConfig()
+        self._rng = np.random.default_rng(int(seed) + 1000 * int(env_id))
 
         # SimulationApp must be created before any other isaacsim/omni import, and must
         # be created fresh inside whichever process actually owns this Env instance --
@@ -231,8 +258,8 @@ class Ur5eGraspEnv(gym.Env):
         self.MAX_SPAWN_RADIUS_M = 0.05
         self.MAX_STANDOFF_M = 0.30  # only used to scale the table-collision penalty, see step()
 
-        self.max_episode_steps = 500  # pure-RL (no classical handoff) episode budget, matches Gazebo env's UR3E_USE_CLASSICAL_HANDOFF=false path
-        self.sim_step_time = 0.1  # seconds of sim time advanced per env.step()
+        self.max_episode_steps = self.cfg.max_episode_steps  # pure-RL (no classical handoff) episode budget
+        self.sim_step_time = self.cfg.sim_step_time  # seconds of sim time advanced per env.step()
         self.physics_dt = 1.0 / 60.0
         self._substeps_per_step = max(1, round(self.sim_step_time / self.physics_dt))
 
@@ -378,6 +405,23 @@ class Ur5eGraspEnv(gym.Env):
                 "regressed (see the comment above this block)."
             )
 
+        # Thesis-driven change: PhysX articulation self-collision was OFF in every earlier run
+        # (self_collision=False at import time). Turn it on here, before the first
+        # world.reset() cooks the articulation, and filter the collision pairs that are
+        # inside the Robotiq gripper (its closed four-bar linkage overlaps by design).
+        from pxr import PhysxSchema
+
+        art_root_prim = stage.GetPrimAtPath(articulation_root_path)
+        if art_root_prim.HasAPI(PhysxSchema.PhysxArticulationAPI):
+            physx_art_api = PhysxSchema.PhysxArticulationAPI(art_root_prim)
+        else:
+            physx_art_api = PhysxSchema.PhysxArticulationAPI.Apply(art_root_prim)
+        physx_art_api.CreateEnabledSelfCollisionsAttr().Set(bool(self.cfg.self_collision))
+        n_filtered = 0
+        if self.cfg.self_collision and self.cfg.filter_gripper_internal_pairs:
+            n_filtered = self._filter_gripper_internal_pairs(link_prims_by_name)
+        print(f"DEBUG self_collision={self.cfg.self_collision} filtered_gripper_pairs={n_filtered}", flush=True)
+
         # Table model is centered at world (0, 0) in the Gazebo world file (its own link
         # poses, e.g. the top slab's z=0.78, are relative to that) -- corrected 2026-09-10
         # from an incorrect (0, 0.55) center that didn't match the source.
@@ -434,8 +478,8 @@ class Ur5eGraspEnv(gym.Env):
         # correct position, distance-from-origin exceeds 1.0m even though the real
         # distance-from-base is a safe ~0.843m, so every episode was hard-terminating at
         # step 0 regardless of policy behavior).
-        self._left_pad = RigidPrim(prim_paths_expr=left_pad_path, name=f"ur5e_{env_id}_left_pad")
-        self._right_pad = RigidPrim(prim_paths_expr=right_pad_path, name=f"ur5e_{env_id}_right_pad")
+        self._left_pad = self._make_pad_prim(RigidPrim, left_pad_path, f"ur5e_{env_id}_left_pad")
+        self._right_pad = self._make_pad_prim(RigidPrim, right_pad_path, f"ur5e_{env_id}_right_pad")
         self._base_link = RigidPrim(prim_paths_expr=base_link_path, name=f"ur5e_{env_id}_base_link")
         self._world.scene.add(self._left_pad)
         self._world.scene.add(self._right_pad)
@@ -542,8 +586,26 @@ class Ur5eGraspEnv(gym.Env):
                 "Target_X", "Target_Y", "Target_Z",
                 "Act_J1", "Act_J2", "Act_J3", "Act_J4", "Act_J5", "Act_J6", "Act_Gripper",
                 "Spawn_Radius_M",
+                "Self_Clearance", "Arm_Table_Clearance", "Contact_L_N", "Contact_R_N", "Contact_Source",
+                "Hold_Count", "Rand_Strength",
             ])
         self.global_step_count = 0
+
+        # --- thesis-driven additions ---
+        self._randomizer = DomainRandomizer(self.cfg.randomization, self._rng, spec.neutral_action())
+        self._hold = HoldTracker(self.cfg.contact)
+        self._contact_sensor = None
+        self._contact_source = "gap_proxy"
+        self._contact_ready = False
+        self._closed_near_count = 0
+        self._prev_action = spec.neutral_action()
+        self._warned = set()
+        self._table_z_base = TABLE_TOP_Z - float(K.BASE_POS_WORLD[2])
+        self._lego_mass0 = None
+        try:
+            self._lego_mass0 = float(self._lego.get_mass())
+        except Exception:
+            self._lego_mass0 = None
 
     def set_curriculum_level(self, level):
         self.curriculum_level = float(np.clip(level, 0.0, 1.0))
@@ -574,10 +636,112 @@ class Ur5eGraspEnv(gym.Env):
     def _active_goal_pose(self):
         return self._lego.get_world_pose()[0].astype(np.float32)
 
+    # ------------------------------------------------------------ thesis-driven helpers
+
+    def _warn_once(self, key, message):
+        if key not in self._warned:
+            self._warned.add(key)
+            print(f"[Ur5eGraspEnv {self.env_id}] WARNING: {message}", flush=True)
+
+    def _filter_gripper_internal_pairs(self, link_prims_by_name):
+        """Filter collisions between every pair of gripper links (UsdPhysics.FilteredPairsAPI).
+
+        With articulation self-collision on, PhysX only skips directly jointed links. The
+        Robotiq four-bar linkage has non-adjacent parts whose colliders overlap by design;
+        left unfiltered they would push against each other constantly.
+        """
+        from pxr import UsdPhysics
+
+        prims = [link_prims_by_name[n] for n in GRIPPER_LINKS if n in link_prims_by_name]
+        count = 0
+        for a in prims:
+            api = UsdPhysics.FilteredPairsAPI.Apply(a)
+            rel = api.CreateFilteredPairsRel()
+            for b in prims:
+                if b is not a:
+                    rel.AddTarget(b.GetPath())
+                    count += 1
+        return count
+
+    def _make_pad_prim(self, RigidPrim, path, name):
+        """Finger-pad view; with contact reporting against the target when configured."""
+        if self.cfg.contact.source == "sensor":
+            try:
+                return RigidPrim(
+                    prim_paths_expr=path, name=name, prepare_contact_sensors=True,
+                    track_contact_forces=True, contact_filter_prim_paths_expr=["/World/Lego"],
+                    max_contact_count=16,
+                )
+            except Exception as e:  # signature differs between Isaac Sim versions
+                print(f"[Ur5eGraspEnv {self.env_id}] contact-enabled RigidPrim failed ({e}); plain view used", flush=True)
+        return RigidPrim(prim_paths_expr=path, name=name)
+
+    def _ensure_contact_sensor(self):
+        """Create the contact sensor lazily, after the first settle steps of the first episode."""
+        if self._contact_ready:
+            return
+        self._contact_ready = True
+        if self.cfg.contact.source != "sensor":
+            self._contact_source = "gap_proxy"
+            return
+        sensor = GraspContactSensor(self._left_pad, self._right_pad, self.physics_dt)
+        if sensor.available:
+            self._contact_sensor, self._contact_source = sensor, "sensor"
+            print(f"[Ur5eGraspEnv {self.env_id}] contact source: sensor ({sensor.method})", flush=True)
+        elif self.cfg.contact.allow_gap_proxy_fallback:
+            self._contact_source = "gap_proxy"
+            print(f"[Ur5eGraspEnv {self.env_id}] WARNING: finger-pad contact sensor unavailable, using the gap proxy", flush=True)
+        else:
+            raise RuntimeError(
+                "Finger-pad contact sensor unavailable (RigidPrim.get_contact_force_matrix / "
+                "get_net_contact_forces failed). Run scripts/validate_collisions.py to see which API "
+                "this Isaac Sim version exposes, or set contact.allow_gap_proxy_fallback=true "
+                "(comparison runs only: the gap proxy is what the headline run used)."
+            )
+
+    def _read_efforts(self):
+        """Measured arm joint efforts (N*m) if the simulator exposes them, else None."""
+        fn = getattr(self._robot, "get_measured_joint_efforts", None)
+        if fn is None:
+            return None
+        try:
+            return np.asarray(fn(joint_indices=self._arm_dof_indices)[0], dtype=float)
+        except Exception:
+            self._warn_once("efforts", "measured joint efforts unavailable; energy term uses sum(qdot^2)")
+            return None
+
+    def _apply_physics_randomization(self, p):
+        """Per-episode PD gain, joint friction and target-mass randomization (guarded: the exact
+        Articulation/RigidPrim setters differ between Isaac Sim versions)."""
+        if not self.cfg.randomization.physics_randomization or p.strength <= 0.0:
+            return
+        try:
+            self._robot.set_gains(
+                kps=np.array([[400.0 * p.kp_scale] * 6], dtype=np.float32),
+                kds=np.array([[40.0 * p.kd_scale] * 6], dtype=np.float32),
+                joint_indices=self._arm_dof_indices,
+            )
+        except Exception as e:
+            self._warn_once("gains", f"gain randomization unavailable ({e})")
+        try:
+            self._robot.set_friction_coefficients(
+                np.full((1, 6), p.joint_friction, dtype=np.float32), joint_indices=self._arm_dof_indices
+            )
+        except Exception as e:
+            self._warn_once("friction", f"joint-friction randomization unavailable ({e})")
+        if self._lego_mass0 is not None:
+            try:
+                self._lego.set_mass(self._lego_mass0 * p.lego_mass_scale)
+            except Exception as e:
+                self._warn_once("mass", f"target-mass randomization unavailable ({e})")
+
     # ------------------------------------------------------------------ gym API
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        if seed is not None:
+            self._rng = np.random.default_rng(int(seed) + 1000 * int(self.env_id))
+            self._randomizer.rng = self._rng
         self.current_step = 0
         self.episode_shaping_sum = 0.0
 
@@ -613,9 +777,13 @@ class Ur5eGraspEnv(gym.Env):
         # -- so this only resets physics state, not the scene construction.
         self._world.reset()
 
-        self._robot.set_joint_positions(
-            np.array([self.home_joint_positions], dtype=np.float32), joint_indices=self._arm_dof_indices
-        )
+        episode_rand = self._randomizer.reset_episode(self.curriculum_level)
+        self._prev_action = spec.neutral_action()
+        start_q = np.clip(
+            self.home_joint_positions + episode_rand.start_jitter.astype(np.float32),
+            self.joint_pos_min, self.joint_pos_max,
+        ).astype(np.float32)
+        self._robot.set_joint_positions(np.array([start_q], dtype=np.float32), joint_indices=self._arm_dof_indices)
         self._robot.set_joint_positions(np.array([[0.0]], dtype=np.float32), joint_indices=[self._gripper_dof_index])
         self._robot.set_joint_velocities(np.zeros((1, self._robot.num_dof), dtype=np.float32))
 
@@ -623,8 +791,8 @@ class Ur5eGraspEnv(gym.Env):
             self.MIN_SPAWN_RADIUS_M
             + self.curriculum_level * (self.MAX_SPAWN_RADIUS_M - self.MIN_SPAWN_RADIUS_M)
         )
-        spawn_r = self.current_spawn_radius_m * np.sqrt(np.random.uniform(0.0, 1.0))
-        spawn_theta = np.random.uniform(0.0, 2 * np.pi)
+        spawn_r = self.current_spawn_radius_m * np.sqrt(self._rng.uniform(0.0, 1.0))
+        spawn_theta = self._rng.uniform(0.0, 2 * np.pi)
         spawn_x = LEGO_BASE_X + spawn_r * np.cos(spawn_theta)
         spawn_y = LEGO_BASE_Y + spawn_r * np.sin(spawn_theta)
         self._lego.set_world_pose(
@@ -647,18 +815,31 @@ class Ur5eGraspEnv(gym.Env):
         for _ in range(30):
             self._world.step(render=False)
 
+        self._apply_physics_randomization(episode_rand)
+        self._ensure_contact_sensor()
+        self._hold.reset(LEGO_SPAWN_Z)
+        self._closed_near_count = 0
+
         state = self._get_obs()
         ee_pos = state[12:15]
         self._prev_dist = float(np.linalg.norm(ee_pos - self._active_goal_pose()))
         self.current_gripper_pos = 0.0
-        return state, {}
+        return self._randomizer.perturb_observation(state), {}
 
     def step(self, action):
-        arm_delta = np.clip(action[:6], -self.max_joint_delta_rad, self.max_joint_delta_rad)
+        cfg = self.cfg
+        action = np.asarray(action, dtype=np.float32)
+        if cfg.action_smoothing_alpha > 0.0:
+            a = cfg.action_smoothing_alpha
+            action = (a * self._prev_action + (1.0 - a) * action).astype(np.float32)
+        self._prev_action = action.copy()
+        applied = self._randomizer.process_action(action)  # action noise and random delay
+
+        arm_delta = np.clip(applied[:6], -self.max_joint_delta_rad, self.max_joint_delta_rad)
         current_arm_pos = self._robot.get_joint_positions(joint_indices=self._arm_dof_indices)[0]
         arm_target = np.clip(current_arm_pos + arm_delta, self.joint_pos_min, self.joint_pos_max)
-        gripper_val = float(action[6])
-        gripper_cmd_val = float(((np.clip(gripper_val, -np.pi, np.pi) + np.pi) / (2 * np.pi)) * 0.8)
+        gripper_val = float(applied[6])
+        gripper_cmd_val = float(spec.gripper_cmd(gripper_val))
 
         self._robot.set_joint_position_targets(
             np.array([arm_target], dtype=np.float32), joint_indices=self._arm_dof_indices
@@ -675,108 +856,88 @@ class Ur5eGraspEnv(gym.Env):
         )
         self.current_gripper_pos = achieved_gripper_pos
 
-        state = self._get_obs()
+        state = self._get_obs()  # true state: rewards and terminations never use the noisy copy
         ee_pos = state[12:15]
         dist = float(np.linalg.norm(ee_pos - self._active_goal_pose()))
-
-        reward = float(self._prev_dist - dist)
-        self._prev_dist = dist
-
-        # VELOCITY_PENALTY_COEF corrected 2026-09-11 from 0.05 to 0.001, two orders of
-        # magnitude down. Root-caused live from the ppo_600k run's own hardware CSVs
-        # (both envs, ~590k total env-steps): avg sum(|joint_vel|) across the run was
-        # ~7.2 rad/s, i.e. avg penalty ~0.36/step at the old coefficient -- vs. this
-        # same file's own doc'd ~2mm-per-step median approach rate under a *successfully
-        # closing* policy, worth only ~0.002 of per-step distance-shaping reward. The
-        # penalty outweighed the only path to positive reward by ~30-70x, so essentially
-        # every step netted negative, SHAPING_FLOOR (below) was hit within the first
-        # ~15 steps of nearly every episode, and reward was clamped to exactly 0.0000
-        # for the remaining ~97% of each 500-step episode regardless of whether the arm
-        # moved toward or away from the target (confirmed directly in the CSVs: reward
-        # pinned at 0.0000 for hundreds of consecutive steps while distance-to-target
-        # wandered between 0.9-1.7m). Net effect over the full 600k-step run: distance-
-        # to-target never trended down (chunked averages stayed flat at 0.84-1.19m from
-        # step 0 to step 580k), curriculum_level never advanced off its 0.0 floor in
-        # either env, and only 1 genuine "Full Task Success" occurred in ~1180 episodes
-        # across both envs. 0.001 brings the penalty for that same ~7.2 rad/s back down
-        # to ~0.007/step -- same order of magnitude as the position-shaping term instead
-        # of 30-70x larger. First-pass rebalance, not re-tuned against a real training
-        # run yet -- watch the next run's own hardware CSVs (per-step Reward next to
-        # Dist_to_Target) the same way this one was diagnosed, rather than assuming this
-        # exact value is final.
-        VELOCITY_PENALTY_COEF = 0.001
         joint_vel = state[6:12]
-        velocity_penalty = VELOCITY_PENALTY_COEF * float(np.sum(np.abs(joint_vel)))
-        reward -= velocity_penalty
+        q_arm = state[0:6].astype(float)
 
-        SHAPING_FLOOR = -5.0
-        prospective_sum = self.episode_shaping_sum + reward
-        if prospective_sum < SHAPING_FLOOR:
-            reward = SHAPING_FLOOR - self.episode_shaping_sum
-            self.episode_shaping_sum = SHAPING_FLOOR
+        # collision proxies from the calibrated kinematic model (see kinematics.py)
+        self_clear, _ = K.self_clearance(q_arm, achieved_gripper_pos)
+        arm_table_clear = K.table_clearance(
+            q_arm, achieved_gripper_pos, table_z_base=self._table_z_base, include_tip=False
+        )
+        align_cos = 1.0
+        if cfg.reward.align_coef > 0.0:
+            to_target = K._rot_z(K.BASE_YAW).T @ state[19:22].astype(float) - K.world_to_base(ee_pos.astype(float))
+            n = float(np.linalg.norm(to_target))
+            if n > 1e-6:
+                align_cos = float(np.dot(K.tool_axis_base(q_arm), to_target / n))
+
+        q = StepQuantities(
+            prev_dist=self._prev_dist, dist=dist, joint_vel=joint_vel.astype(float), joint_pos=q_arm,
+            joint_pos_min=self.joint_pos_min.astype(float), joint_pos_max=self.joint_pos_max.astype(float),
+            efforts=self._read_efforts(), dt=self.sim_step_time, self_clearance=self_clear,
+            table_clearance=arm_table_clear, align_cos=align_cos,
+        )
+        reward, _terms = dense_reward(q, cfg.reward)
+        self._prev_dist = dist
+        reward, self.episode_shaping_sum = apply_floor(reward, self.episode_shaping_sum, cfg.reward.shaping_floor)
+
+        gripper_closed_amount = spec.gripper_closed_amount(gripper_val)
+        closed = gripper_closed_amount > 0.5
+        dist_ok = dist < cfg.reward.success_distance_m
+
+        # Grasp confirmation: contact on both pads held over several steps, not the finger-gap proxy.
+        force_l = force_r = 0.0
+        if self._contact_source == "sensor":
+            force_l, force_r = self._contact_sensor.read()
+            contact_both = pads_in_contact(force_l, force_r, cfg.contact)
         else:
-            self.episode_shaping_sum = prospective_sum
-
-        gripper_closed_amount = (np.clip(gripper_val, -np.pi, np.pi) + np.pi) / (2 * np.pi)
+            contact_both = gap_proxy_contact(gripper_cmd_val, achieved_gripper_pos, gripper_closed_amount, cfg.contact)
+        target_height = float(self._lego.get_world_pose()[0][2])
+        grasp_confirmed = self._hold.update(contact_both, dist_ok, closed, target_height)
+        self._closed_near_count = self._closed_near_count + 1 if (dist_ok and closed) else 0
+        false_grasp = (not grasp_confirmed) and self._closed_near_count >= (
+            cfg.contact.hold_steps + cfg.contact.false_grasp_extra_steps
+        )
 
         self.current_step += 1
-        terminated = False
         truncated = self.current_step >= self.max_episode_steps
         info = {}
 
-        # Grasp-success: contact signal is the achieved-vs-commanded finger_joint gap,
-        # same CONTACT_GAP_THRESHOLD=0.13 calibrated live in the Gazebo project
-        # (contact_threshold_diagnostic.py) -- kept as-is since it's measuring the same
-        # physical quantity (Robotiq mimic-joint travel vs. commanded target) here.
-        CONTACT_GAP_THRESHOLD = 0.13
-        contact_gap = gripper_cmd_val - achieved_gripper_pos
-        contact_detected = gripper_closed_amount > 0.5 and contact_gap > CONTACT_GAP_THRESHOLD
-
-        if dist < 0.05 and gripper_closed_amount > 0.5:
-            if contact_detected:
-                reward += 15.0
-                terminated = True
-                info["termination_reason"] = "Full Task Success"
-            else:
-                reward -= 5.0
-                terminated = True
-                info["termination_reason"] = "False Grasp -- No Contact Detected"
-
-        if np.any(np.abs(joint_vel) > 10.0):
-            reward -= 5.0
-            terminated = True
-            info["termination_reason"] = "Velocity Kill-Switch Triggered"
-
-        # Table collision: height-and-footprint proxy, not a full arm-mesh contact query
-        # (see module docstring for why this port doesn't yet do that). Corrected
-        # 2026-09-10: this used to be a bare "ee_z < 0.02" left over from before the table
-        # height was fixed to its real 0.78 -- at that height, 0.02 only catches the EE
-        # falling almost all the way to the floor, silently missing the much more common
-        # case of it dipping into the table surface itself while still elevated (e.g.
-        # z=0.5 is clearly inside/below the table top but was never flagged). Now checks
-        # actual height-below-table-top AND horizontal position within the table's real
-        # footprint, so being low but off the table's edge (which is fine) doesn't trigger.
-        table_collision = (
+        # Table collision: the original height-and-footprint end-effector test, plus the arm proxy
+        # (fingertip excluded so touching the target next to the table is not a violation).
+        legacy_table = (
             ee_pos[2] < TABLE_TOP_Z - TABLE_COLLISION_MARGIN_M
             and TABLE_X_MIN <= ee_pos[0] <= TABLE_X_MAX
             and TABLE_Y_MIN <= ee_pos[1] <= TABLE_Y_MAX
         )
-        if table_collision:
-            reward -= 5.0 * (1.0 + float(dist) / self.MAX_STANDOFF_M)
-            terminated = True
-            info["termination_reason"] = "Table Collision"
+        table_collision = bool(legacy_table or arm_table_clear < -cfg.reward.table_collision_depth_m)
+        self_collision = bool(self_clear < -cfg.reward.self_collision_depth_m)
 
-        # Target Lost: same base-relative-distance kill-switch as ur3e_env.py, computed
-        # from the lego's actual RigidObject pose (no perception/TF involved).
+        # Target Lost: same base-relative-distance kill-switch as ur3e_env.py.
         target_pos_base_relative = state[19:22]
         target_dist_from_base = float(np.linalg.norm(target_pos_base_relative))
-        if target_dist_from_base > 1.0 or target_pos_base_relative[2] < 0.0:
-            reward -= 5.0
-            terminated = True
-            info["termination_reason"] = "Target Lost (Out of Bounds)"
+        target_lost = bool(target_dist_from_base > 1.0 or target_pos_base_relative[2] < 0.0)
 
-        info["is_success"] = terminated and info.get("termination_reason") == "Full Task Success"
+        terminated, delta, reason = classify_terminal(
+            TerminalInputs(
+                grasp_confirmed=grasp_confirmed, false_grasp=false_grasp, joint_vel=joint_vel,
+                table_collision=table_collision, self_collision=self_collision, target_lost=target_lost,
+                dist_to_target=dist,
+            ),
+            cfg.reward,
+        )
+        reward += delta
+        if reason is not None:
+            info["termination_reason"] = reason
+
+        info["is_success"] = bool(terminated and reason == "Full Task Success")
         info["distance_to_target"] = dist
+        info["self_clearance"] = self_clear
+        info["arm_table_clearance"] = arm_table_clear
+        info["contact_source"] = self._contact_source
 
         self.global_step_count += 1
         try:
@@ -792,11 +953,13 @@ class Ur5eGraspEnv(gym.Env):
                     f"{target_pos_base_relative[0]:.4f}", f"{target_pos_base_relative[1]:.4f}", f"{target_pos_base_relative[2]:.4f}",
                     *[f"{a:.4f}" for a in action],
                     f"{self.current_spawn_radius_m:.4f}",
+                    f"{self_clear:.4f}", f"{arm_table_clear:.4f}", f"{force_l:.3f}", f"{force_r:.3f}",
+                    self._contact_source, self._hold.count, f"{self._randomizer.params.strength:.3f}",
                 ])
         except Exception as e:
             print(f"[Ur5eGraspEnv {self.env_id}] hardware logger failed to write: {e}", flush=True)
 
-        return state, reward, terminated, truncated, info
+        return self._randomizer.perturb_observation(state), reward, terminated, truncated, info
 
     def close(self):
         self._simulation_app.close()

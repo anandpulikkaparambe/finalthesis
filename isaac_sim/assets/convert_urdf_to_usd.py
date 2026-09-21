@@ -27,6 +27,12 @@ parser.add_argument(
     default=None,
     help="Output .usd path. Defaults to the same cache location ur5e_grasp_env.py reads (UR5E_USD_PATH, or the OS-local isaacsim_assets/isaacsimtraining/usd cache).",
 )
+parser.add_argument(
+    "--no-self-collision",
+    dest="self_collision",
+    action="store_false",
+    help="Import with self-collision disabled (the setting of the thesis' headline run). Default: enabled.",
+)
 args = parser.parse_args()
 
 if args.dest_path is None:
@@ -67,7 +73,7 @@ try:
         merge_fixed_joints=False,
         fix_base=True,
         collision_type="Convex Hull",
-        allow_self_collision=False,  # matches the Gazebo env's own physical setup -- no self-collision was ever simulated there either
+        allow_self_collision=args.self_collision,  # default True; the headline run used False (see docs/CHANGES.md)
     )
     importer = URDFImporter(config)
     output_path = importer.import_urdf()
@@ -102,7 +108,7 @@ except ImportError:
     import_config.convex_decomp = False
     import_config.fix_base = True
     import_config.make_default_prim = True
-    import_config.self_collision = False
+    import_config.self_collision = args.self_collision
     import_config.create_physics_scene = False
     import_config.import_inertia_tensor = True
     import_config.distance_scale = 1.0

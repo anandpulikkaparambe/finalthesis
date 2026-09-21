@@ -58,20 +58,26 @@ export OMNI_KIT_ACCEPT_EULA=YES
 uv pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match
 
 echo "=== Installing training deps (without letting them touch the pinned torch build) ==="
-uv pip install stable_baselines3 gymnasium
+uv pip install stable_baselines3 gymnasium pytest
 echo "torch after stable_baselines3 install (should be unchanged from above):"
 python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())'
 
-echo "=== Cloning isaacsimtraining (deploy key expected at ~/.ssh/id_ed25519) ==="
-if [ ! -d /workspace/isaacsimtraining ]; then
-  git clone git@github.com:anandpulikkaparambe/isaacsimtraining.git /workspace/isaacsimtraining
+echo "=== Cloning finalthesis (public repo, no key needed) ==="
+if [ ! -d /workspace/finalthesis ]; then
+  git clone https://github.com/anandpulikkaparambe/finalthesis.git /workspace/finalthesis
 fi
-cd /workspace/isaacsimtraining
+cd /workspace/finalthesis/isaac_sim
 
 echo "=== Converting URDF -> USD (first run only; cached after) ==="
 python assets/convert_urdf_to_usd.py
 
 echo "=== Smoke test (3 episodes -- 1 isn't enough to catch an early-kill-switch instability) ==="
 python scripts/smoke_test.py --episodes 3 --steps-per-episode 100
+
+echo "=== Unit tests (no Isaac Sim needed) ==="
+python -m pytest tests -q
+
+echo "=== Physics validation (collisions, contact sensor, demo grasp) -- READ THE OUTPUT before training ==="
+python scripts/validate_collisions.py --config configs/default.json
 
 echo "Setup complete. Run training with: source /venv/isaac51/bin/activate && ./vastai/train_entrypoint.sh"

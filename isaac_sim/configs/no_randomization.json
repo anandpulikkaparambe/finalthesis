@@ -1,0 +1,78 @@
+{
+  "reward": {
+    "shaping_floor": -5.0,
+    "velocity_penalty_coef": 0.001,
+    "energy_penalty_coef": 0.0005,
+    "joint_limit_penalty_coef": 0.01,
+    "joint_limit_margin_rad": 0.15,
+    "self_collision_margin_m": 0.03,
+    "self_collision_soft_coef": 0.05,
+    "self_collision_terminates": true,
+    "self_collision_depth_m": 0.03,
+    "self_collision_penalty": -5.0,
+    "table_margin_m": 0.02,
+    "table_soft_coef": 0.05,
+    "table_collision_penalty": -5.0,
+    "table_collision_depth_m": 0.03,
+    "max_standoff_m": 0.3,
+    "align_coef": 0.0,
+    "success_bonus": 15.0,
+    "false_grasp_penalty": -5.0,
+    "kill_switch_penalty": -5.0,
+    "kill_switch_speed_rad_s": 10.0,
+    "target_lost_penalty": -5.0,
+    "success_distance_m": 0.05
+  },
+  "contact": {
+    "source": "sensor",
+    "allow_gap_proxy_fallback": false,
+    "min_pad_force_n": 0.5,
+    "hold_steps": 5,
+    "false_grasp_extra_steps": 10,
+    "lift_required_m": 0.0,
+    "gap_threshold": 0.13
+  },
+  "randomization": {
+    "enabled": false,
+    "scale": 1.0,
+    "ramp_with_curriculum": true,
+    "obs_joint_pos_noise_rad": 0.005,
+    "obs_joint_vel_noise_rad_s": 0.01,
+    "obs_target_bias_m": 0.01,
+    "obs_target_noise_m": 0.002,
+    "action_noise_rad": 0.005,
+    "action_delay_steps_max": 2,
+    "start_joint_jitter_rad": 0.05,
+    "physics_randomization": true,
+    "kp_scale_range": [
+      0.8,
+      1.2
+    ],
+    "kd_scale_range": [
+      0.8,
+      1.2
+    ],
+    "joint_friction_range": [
+      0.0,
+      0.05
+    ],
+    "lego_mass_scale_range": [
+      0.7,
+      1.5
+    ]
+  },
+  "curriculum": {
+    "initial_level": 0.0,
+    "window_episodes": 20,
+    "advance_threshold": 0.8,
+    "regress_threshold": 0.2,
+    "level_step": 0.05,
+    "warmup_steps": 50000,
+    "warmup_cap": 0.2
+  },
+  "self_collision": true,
+  "filter_gripper_internal_pairs": true,
+  "max_episode_steps": 500,
+  "sim_step_time": 0.1,
+  "action_smoothing_alpha": 0.0
+}
