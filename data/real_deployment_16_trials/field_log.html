@@ -1,0 +1,649 @@
+<title>UR5e SAC Field Log</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #f2f1ed;
+    --surface: #ffffff;
+    --surface-sunk: #ebe9e3;
+    --ink: #1c2024;
+    --ink-muted: #5c6470;
+    --ink-faint: #8b93a0;
+    --line: #ddd9d0;
+    --line-strong: #c7c2b6;
+    --accent: #d9560a;
+    --accent-soft: #fdeee1;
+    --success: #1a7f5a;
+    --success-soft: #e5f3ed;
+    --warn: #9c7300;
+    --warn-soft: #faf1d9;
+    --danger: #b52a1f;
+    --danger-soft: #fbe9e6;
+    --mono-chip-bg: #edece6;
+    --shadow: 0 1px 2px rgba(28,32,36,0.04), 0 4px 14px rgba(28,32,36,0.05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15181c;
+      --surface: #1c2025;
+      --surface-sunk: #21262c;
+      --ink: #e9eaec;
+      --ink-muted: #a1a8b2;
+      --ink-faint: #767e89;
+      --line: #2c3138;
+      --line-strong: #3a4048;
+      --accent: #ff8a4a;
+      --accent-soft: #3a2415;
+      --success: #4bbf94;
+      --success-soft: #163127;
+      --warn: #d9ae3f;
+      --warn-soft: #332c11;
+      --danger: #f0776a;
+      --danger-soft: #3a1a17;
+      --mono-chip-bg: #23282e;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181c;
+    --surface: #1c2025;
+    --surface-sunk: #21262c;
+    --ink: #e9eaec;
+    --ink-muted: #a1a8b2;
+    --ink-faint: #767e89;
+    --line: #2c3138;
+    --line-strong: #3a4048;
+    --accent: #ff8a4a;
+    --accent-soft: #3a2415;
+    --success: #4bbf94;
+    --success-soft: #163127;
+    --warn: #d9ae3f;
+    --warn-soft: #332c11;
+    --danger: #f0776a;
+    --danger-soft: #3a1a17;
+    --mono-chip-bg: #23282e;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 14px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding-inline: 20px;
+    padding-block: 40px 80px;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  main {
+    max-width: 900px;
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding-bottom: 28px;
+    border-bottom: 2px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: 'IBM Plex Mono';
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  h1 {
+    font-size: clamp(28px, 4.5vw, 40px);
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .dek {
+    color: var(--ink-muted);
+    font-size: 16px;
+    max-width: 62ch;
+    margin: 0;
+  }
+  .specsheet {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .spec {
+    background: var(--surface);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .spec dt {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ink-faint);
+    font-weight: 600;
+  }
+  .spec dd {
+    margin: 0;
+    font-family: 'IBM Plex Mono';
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  /* ---------- Section scaffolding ---------- */
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    border-bottom: 1px solid var(--line-strong);
+    padding-bottom: 8px;
+  }
+  .section-num {
+    font-family: 'IBM Plex Mono';
+    font-size: 13px;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0;
+    text-wrap: balance;
+  }
+  p { margin: 0; max-width: 68ch; }
+  .lede { color: var(--ink-muted); }
+
+  /* ---------- Stat tiles ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat .value {
+    font-family: 'IBM Plex Mono';
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .stat .value.accent { color: var(--accent); }
+  .stat .value.danger { color: var(--danger); }
+  .stat .label {
+    font-size: 12.5px;
+    color: var(--ink-muted);
+  }
+
+  /* ---------- Run table ---------- */
+  .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 760px;
+    background: var(--surface);
+  }
+  thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    padding: 10px 12px;
+    background: var(--surface-sunk);
+    border-bottom: 1px solid var(--line-strong);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+    font-size: 13.5px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-sunk); }
+  td.num { font-family: 'IBM Plex Mono'; font-variant-numeric: tabular-nums; }
+  td.run-id { font-family: 'IBM Plex Mono'; color: var(--ink-faint); font-size: 12.5px; }
+  tr.divider td {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: 'IBM Plex Mono';
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--line-strong);
+    border-top: 1px solid var(--line-strong);
+  }
+  tr.discarded td { opacity: 0.55; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'IBM Plex Mono';
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 100px;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  .badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+  .badge.b-linkdrop { background: var(--mono-chip-bg); color: var(--ink-muted); }
+  .badge.b-estop { background: var(--accent-soft); color: var(--accent); }
+  .badge.b-pstop { background: var(--danger-soft); color: var(--danger); }
+  .badge.b-collision { background: var(--danger-soft); color: var(--danger); }
+  .badge.b-ok { background: var(--success-soft); color: var(--success); }
+  .badge.b-warn { background: var(--warn-soft); color: var(--warn); }
+
+  .distbar {
+    position: relative;
+    width: 128px;
+    height: 16px;
+  }
+  .distbar .track {
+    position: absolute;
+    top: 7px; left: 0; right: 0;
+    height: 2px;
+    background: var(--line-strong);
+  }
+  .distbar .threshold {
+    position: absolute;
+    top: 2px;
+    width: 1px;
+    height: 12px;
+    background: var(--success);
+    opacity: 0.7;
+  }
+  .distbar .dot {
+    position: absolute;
+    top: 3px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--line-strong);
+    transform: translateX(-50%);
+  }
+  .distbar .dot.best { background: var(--success); }
+  .distbar .dot.discarded { background: var(--ink-faint); opacity: 0.6; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--ink-muted);
+    align-items: center;
+  }
+  .legend .swatch {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+  }
+
+  /* ---------- Bug list ---------- */
+  .bugs {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .bug {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 14px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .bug:last-child { border-bottom: none; }
+  .bug .n {
+    font-family: 'IBM Plex Mono';
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink-faint);
+    line-height: 1.3;
+  }
+  .bug h3 {
+    margin: 0 0 4px 0;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+  .bug p { font-size: 13.5px; color: var(--ink-muted); max-width: 66ch; }
+  .bug code {
+    font-family: 'IBM Plex Mono';
+    background: var(--mono-chip-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.92em;
+  }
+
+  /* ---------- Callout ---------- */
+  .callout {
+    background: var(--danger-soft);
+    border: 1px solid var(--danger);
+    border-radius: 10px;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .callout .tag {
+    font-family: 'IBM Plex Mono';
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    color: var(--danger);
+  }
+  .callout p { color: var(--ink); max-width: 70ch; }
+  .callout code {
+    font-family: 'IBM Plex Mono';
+    background: var(--surface);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    border: 1px solid var(--line);
+  }
+
+  /* ---------- Open list ---------- */
+  ul.open {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  ul.open li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 14px;
+    color: var(--ink-muted);
+    max-width: 70ch;
+  }
+  ul.open li::before {
+    content: '?';
+    font-family: 'IBM Plex Mono';
+    font-weight: 700;
+    color: var(--warn);
+    background: var(--warn-soft);
+    width: 20px; height: 20px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    font-family: 'IBM Plex Mono';
+  }
+
+  @media (max-width: 640px) {
+    .specsheet { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+
+<main>
+
+  <header>
+    <span class="eyebrow">Real-Hardware Field Log — 2026-09-11</span>
+    <h1>SAC Reach-and-Grasp on the Real UR5e</h1>
+    <p class="dek">Sixteen real-hardware trials of an Isaac Sim-trained policy, the five deployment bugs found along the way, and the collision-modeling gap that explains why none of them reached the gripper.</p>
+    <dl class="specsheet">
+      <div class="spec"><dt>Checkpoint</dt><dd>ur5e_isaac_sac_final.zip</dd></div>
+      <div class="spec"><dt>Training steps</dt><dd>629,668</dd></div>
+      <div class="spec"><dt>Peak sim success</dt><dd>97%</dd></div>
+      <div class="spec"><dt>Robot</dt><dd>UR5e + Robotiq 2F-140</dd></div>
+      <div class="spec"><dt>Real trials logged</dt><dd>16</dd></div>
+      <div class="spec"><dt>Real grasps</dt><dd>0</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2>Interface verification</h2>
+    </div>
+    <p class="lede">Before any real motion, the deployment's observation and action construction were checked line-by-line against the actual Isaac Sim training code — not assumed.</p>
+    <div class="stats">
+      <div class="stat">
+        <span class="value">23-D</span>
+        <span class="label">observation: 6 joint pos · 6 joint vel · 7 EE pose · 3 target · 1 gripper</span>
+      </div>
+      <div class="stat">
+        <span class="value">7-D</span>
+        <span class="label">action: 6 joint deltas (±0.08 rad) · 1 gripper command</span>
+      </div>
+      <div class="stat">
+        <span class="value">0.05 m</span>
+        <span class="label">grasp threshold — never once reached in 16 real trials</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <h2>Run log</h2>
+    </div>
+    <p class="lede">Closest real approach to target per trial, against the 0.05&nbsp;m grasp threshold and a ~1.2&nbsp;m starting distance. Scroll for full detail.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Sampling</th>
+            <th>Speed</th>
+            <th>Steps</th>
+            <th>Min. distance</th>
+            <th>Approach</th>
+            <th>Stop cause</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="run-id">01</td><td>Deterministic</td><td class="num">0.5s dry</td><td class="num">15×</td><td class="num">1.225 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:94%"></div></div></td>
+            <td><span class="badge b-ok">observation only</span></td></tr>
+          <tr><td class="run-id">02</td><td>Deterministic</td><td class="num">3.0s</td><td class="num">50</td><td class="num">0.902 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:69%"></div></div></td>
+            <td><span class="badge b-estop">e-stop</span></td></tr>
+          <tr><td class="run-id">03</td><td>Deterministic</td><td class="num">2.0s</td><td class="num">102</td><td class="num"><strong>0.412 m</strong></td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot best" style="left:32%"></div></div></td>
+            <td><span class="badge b-linkdrop">link drop</span></td></tr>
+          <tr><td class="run-id">04</td><td>Stochastic</td><td class="num">2.0s</td><td class="num">35</td><td class="num">0.922 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:71%"></div></div></td>
+            <td><span class="badge b-estop">e-stop</span></td></tr>
+          <tr><td class="run-id">05</td><td>Stochastic</td><td class="num">2.0s</td><td class="num">33</td><td class="num">0.939 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:72%"></div></div></td>
+            <td><span class="badge b-pstop">protective stop · C4A3</span></td></tr>
+          <tr><td class="run-id">06</td><td>Stochastic</td><td class="num">2.0s</td><td class="num">34</td><td class="num">0.889 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:68%"></div></div></td>
+            <td><span class="badge b-warn">false grasp signal</span></td></tr>
+          <tr><td class="run-id">07</td><td>Stochastic</td><td class="num">2.0s</td><td class="num">115</td><td class="num"><strong>0.407 m</strong></td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot best" style="left:31%"></div></div></td>
+            <td><span class="badge b-linkdrop">link drop</span></td></tr>
+          <tr><td class="run-id">08</td><td>Stochastic</td><td class="num">2.0s</td><td class="num">111</td><td class="num">0.547 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:42%"></div></div></td>
+            <td><span class="badge b-linkdrop">link drop</span></td></tr>
+          <tr><td class="run-id">09</td><td>Stochastic</td><td class="num">1.0s</td><td class="num">115</td><td class="num">0.662 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:51%"></div></div></td>
+            <td><span class="badge b-linkdrop">link drop</span></td></tr>
+          <tr><td class="run-id">10</td><td>Stochastic</td><td class="num">0.5s</td><td class="num">121</td><td class="num">0.615 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:47%"></div></div></td>
+            <td><span class="badge b-pstop">protective stop</span></td></tr>
+          <tr><td class="run-id">11</td><td>Stochastic</td><td class="num">0.1s full</td><td class="num">6</td><td class="num">1.225 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:94%"></div></div></td>
+            <td><span class="badge b-estop">e-stop</span></td></tr>
+          <tr><td class="run-id">12</td><td>Stochastic</td><td class="num">0.3s</td><td class="num">118</td><td class="num">0.683 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:53%"></div></div></td>
+            <td><span class="badge b-pstop">protective stop</span></td></tr>
+
+          <tr class="divider"><td colspan="7">Pipeline fix — gripper added to URDF, joint-state merger rewritten, target re-measured</td></tr>
+
+          <tr class="discarded"><td class="run-id">13</td><td>Stochastic</td><td class="num">0.3s</td><td class="num">10</td><td class="num">0.000 m*</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot discarded" style="left:1%"></div></div></td>
+            <td><span class="badge b-warn">data discarded</span></td></tr>
+          <tr><td class="run-id">14</td><td>Stochastic</td><td class="num">0.3s</td><td class="num">29</td><td class="num">0.731 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:56%"></div></div></td>
+            <td><span class="badge b-pstop">protective stop</span></td></tr>
+          <tr><td class="run-id">15</td><td>Stochastic</td><td class="num">0.3s</td><td class="num">29</td><td class="num">0.732 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:56%"></div></div></td>
+            <td><span class="badge b-linkdrop">link drop</span></td></tr>
+          <tr><td class="run-id">16</td><td>Stochastic</td><td class="num">0.5s</td><td class="num">35</td><td class="num">0.787 m</td>
+            <td><div class="distbar"><div class="track"></div><div class="threshold" style="left:3.8%"></div><div class="dot" style="left:60%"></div></div></td>
+            <td><span class="badge b-collision">self-collision</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--success)"></span>0.05 m grasp threshold</span>
+      <span><span class="swatch" style="background:var(--accent)"></span>closest real approach</span>
+      <span>* run 13's measurement was itself corrupted by the still-broken merger — discarded, not a result</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <h2>Headline results</h2>
+    </div>
+    <div class="stats">
+      <div class="stat">
+        <span class="value danger">0 / 16</span>
+        <span class="label">real trials reached grasp range — <code class="mono">object_grasped</code> never fired at a target-proximal state</span>
+      </div>
+      <div class="stat">
+        <span class="value accent">0.407 m</span>
+        <span class="label">best real approach (runs 3, 7) — still 8× short of the 0.05 m threshold</span>
+      </div>
+      <div class="stat">
+        <span class="value">0.6–0.9 m</span>
+        <span class="label">typical plateau, independent of sampling mode or step speed</span>
+      </div>
+      <div class="stat">
+        <span class="value">29 / 29</span>
+        <span class="label">runs 14 &amp; 15, post-fix, stopped at the identical step — reproduced, not isolated</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">04</span>
+      <h2>Deployment bugs found and fixed</h2>
+    </div>
+    <p class="lede">In the order they were found, each blocking real progress until fixed.</p>
+    <div class="bugs">
+      <div class="bug">
+        <span class="n">1</span>
+        <div><h3>Out-of-distribution start</h3><p>Deployment began already at the pick target (dist≈0); training always reset to one fixed home pose ~0.84 m from target, so the policy had zero experience near-zero. Fixed by starting from <code>real_home_position</code>.</p></div>
+      </div>
+      <div class="bug">
+        <span class="n">2</span>
+        <div><h3>Step-budget mismatch</h3><p><code>MAX_STEPS</code> was 30–80, calibrated to an older checkpoint's 50-step episodes. This checkpoint trained with <code>max_episode_steps=500</code>. Raised to match.</p></div>
+      </div>
+      <div class="bug">
+        <span class="n">3</span>
+        <div><h3>Gripper missing from the real URDF</h3><p>The driver's stock launch has no gripper model — EE pose was approximated at <code>tool0</code> (~0.17 m fixed-offset guess) instead of the trained reference point. Fixed with a combined arm+gripper URDF, real TF frames wired in.</p></div>
+      </div>
+      <div class="bug">
+        <span class="n">4</span>
+        <div><h3>Joint-state merger silently zeroing the arm</h3><p>The first TF fix used <code>joint_state_publisher</code>'s merge, which zeroed all 6 arm joints in its output — corrupting every distance computed downstream. Replaced with a minimal custom merger, unit-verified before redeploying.</p></div>
+      </div>
+      <div class="bug">
+        <span class="n">5</span>
+        <div><h3>Target measured with bug 4 still active</h3><p>The first re-measurement of the pick target used the broken merger and was garbage (run 13, discarded). Re-measured after the fix; cross-checked against the original constant — consistent to within the expected gripper-length offset.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">05</span>
+      <h2>Root cause candidate</h2>
+    </div>
+    <div class="callout">
+      <span class="tag">Confirmed in source, corroborated live</span>
+      <p><strong>Self-collision detection is hardcoded off in the training simulator</strong> — <code>self_collision=False</code>, set at URDF-import time in <code>ur5e_grasp_env.py</code>. Only a simplified table-collision proxy exists; the arm and gripper were never able to intersect in ~630,000 training steps, so the policy never had the opportunity to learn that they could.</p>
+      <p>Run 16's real, visually-confirmed self-collision landed in the same 0.7–0.9 m band where most trials independently lose coherence — physical corroboration, not just a code-reading inference.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <h2>Open questions</h2>
+    </div>
+    <ul class="open">
+      <li>Whether the step-29 clustering (runs 14, 15) is a genuine step-count-linked cause or coincidence — two data points isn't enough to tell.</li>
+      <li>Most link-drop stops were never individually root-caused; one was confirmed as a Safety Control Board comms fault (C4A3) and is suspected to explain the rest, since drops occurred regardless of what motion was commanded — including a plain home-return move.</li>
+      <li>No live perception was in the loop this session — the target was a fixed measured constant throughout, not camera-detected. A separate sim-to-real gap, unaddressed here.</li>
+    </ul>
+  </section>
+
+  <footer>
+    ur5e_isaac_sac_final.zip · real_phase2_unclamped_run.py · logs in real_hardware_description/session_logs_2026-09-11/
+  </footer>
+
+</main>

@@ -1,0 +1,8 @@
+gymnasium
+numpy
+stable_baselines3
+tensorboard
+# isaacsim itself is NOT pip-installed via this file -- see assets/README.md and
+# vastai/setup_vastai.sh. Locally this project uses an existing native Isaac Sim
+# install (C:\isaacsim\python.bat); on vast.ai it's pip-installed into its own
+# venv with CUDA-matched torch first (see vastai/setup_vastai.sh).

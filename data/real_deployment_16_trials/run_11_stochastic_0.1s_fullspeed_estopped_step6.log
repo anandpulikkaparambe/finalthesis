@@ -1,0 +1,16 @@
+[INFO] [1789123484.501168620] [phase2_unclamped_run_node]: Loading SAC checkpoint: /home/anand/isaac_sac_checkpoints/repo/rl_logs_7hr_final/ur5e_isaac_sac_final.zip (legacy=True)
+[INFO] [1789123484.924364828] [phase2_unclamped_run_node]: Checkpoint loaded.
+[INFO] [1789123486.225381711] [phase2_unclamped_run_node]: Opening gripper and moving to real_home_position...
+[INFO] [1789123495.943032173] [phase2_unclamped_run_node]: move_to_start: reached and verified.
+[INFO] [1789123495.943320121] [phase2_unclamped_run_node]: === UNCLAMPED RUN: raw policy deltas (bounded +/-0.08rad), 0.1s/step, max 500 steps, gripper force=1.0 speed=0.3 ===
+[INFO] [1789123495.944848630] [phase2_unclamped_run_node]: [step 00] dist=1.2251 raw_delta(rad)=[0.07689999788999557, 0.05620000138878822, -0.07729999721050262, -0.07989999651908875, -0.07660000026226044, -0.025699999183416367] gripper_raw=0.679 -> gripper_target=0.055m object_grasped=False
+[INFO] [1789123498.000384572] [phase2_unclamped_run_node]: [step 01] dist=1.2333 raw_delta(rad)=[0.07970000058412552, 0.07599999755620956, -0.07980000227689743, -0.07940000295639038, -0.07159999758005142, 0.025299999862909317] gripper_raw=-2.750 -> gripper_target=0.131m object_grasped=False
+[INFO] [1789123500.106155732] [phase2_unclamped_run_node]: [step 02] dist=1.2353 raw_delta(rad)=[0.07999999821186066, 0.06109999865293503, -0.07900000363588333, -0.07999999821186066, 0.07620000094175339, 0.05290000140666962] gripper_raw=-0.261 -> gripper_target=0.076m object_grasped=False
+[INFO] [1789123502.011607776] [phase2_unclamped_run_node]: [step 03] dist=1.2516 raw_delta(rad)=[0.07989999651908875, 0.03020000085234642, -0.07959999889135361, -0.07989999651908875, -0.07779999822378159, 0.07609999924898148] gripper_raw=-1.221 -> gripper_target=0.097m object_grasped=False
+[INFO] [1789123503.516632210] [phase2_unclamped_run_node]: [step 04] dist=1.2626 raw_delta(rad)=[0.07999999821186066, -0.012500000186264515, -0.07680000364780426, -0.07970000058412552, 0.016699999570846558, 0.07850000262260437] gripper_raw=-1.024 -> gripper_target=0.093m object_grasped=False
+[INFO] [1789123504.820771866] [phase2_unclamped_run_node]: [step 05] dist=1.2831 raw_delta(rad)=[0.07999999821186066, 0.07779999822378159, -0.07909999787807465, -0.07970000058412552, -0.07609999924898148, 0.07190000265836716] gripper_raw=-3.054 -> gripper_target=0.138m object_grasped=False
+[INFO] [1789123506.325151359] [phase2_unclamped_run_node]: [step 06] dist=1.2766 raw_delta(rad)=[0.07989999651908875, -0.05550000071525574, -0.07599999755620956, -0.07970000058412552, 0.05350000038743019, 0.07249999791383743] gripper_raw=-2.912 -> gripper_target=0.135m object_grasped=False
+[ERROR] [1789123507.478331765] [phase2_unclamped_run_node]: [step 06] Safety mode not NORMAL after step (mode=7) -- stopping immediately.
+[INFO] [1789123507.478762617] [phase2_unclamped_run_node]: === UNCLAMPED RUN ENDED ===
+
+[exited with code 0]

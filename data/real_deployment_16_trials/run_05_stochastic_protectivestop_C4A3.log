@@ -1,0 +1,61 @@
+[INFO] [1789120998.645230024] [phase2_unclamped_run_node]: Loading SAC checkpoint: /home/anand/isaac_sac_checkpoints/repo/rl_logs_7hr_final/ur5e_isaac_sac_final.zip (legacy=True)
+[INFO] [1789120999.070806193] [phase2_unclamped_run_node]: Checkpoint loaded.
+[INFO] [1789121000.372262103] [phase2_unclamped_run_node]: Opening gripper and moving to real_home_position...
+[INFO] [1789121009.288285771] [phase2_unclamped_run_node]: move_to_start: reached and verified.
+[INFO] [1789121009.288588831] [phase2_unclamped_run_node]: === UNCLAMPED RUN: raw policy deltas (bounded +/-0.08rad), 2.0s/step, max 500 steps, gripper force=1.0 speed=0.3 ===
+[INFO] [1789121009.289960135] [phase2_unclamped_run_node]: [step 00] dist=1.2251 raw_delta(rad)=[0.0771000012755394, -0.028599999845027924, -0.07819999754428864, -0.07989999651908875, 0.07150000333786011, 0.027899999171495438] gripper_raw=-1.827 -> gripper_target=0.111m object_grasped=False
+[INFO] [1789121012.748301805] [phase2_unclamped_run_node]: [step 01] dist=1.2740 raw_delta(rad)=[0.0794999971985817, 0.027499999850988388, -0.07980000227689743, -0.07999999821186066, 9.999999747378752e-05, 0.03350000083446503] gripper_raw=-0.113 -> gripper_target=0.073m object_grasped=False
+[INFO] [1789121016.256767553] [phase2_unclamped_run_node]: [step 02] dist=1.2925 raw_delta(rad)=[0.07769999653100967, 0.05000000074505806, -0.07940000295639038, -0.058400001376867294, -0.03750000149011612, 0.052000001072883606] gripper_raw=-2.372 -> gripper_target=0.123m object_grasped=False
+[INFO] [1789121019.914935852] [phase2_unclamped_run_node]: [step 03] dist=1.2964 raw_delta(rad)=[0.07999999821186066, 0.003800000064074993, -0.032999999821186066, -0.07989999651908875, -0.04650000110268593, 0.07649999856948853] gripper_raw=-1.962 -> gripper_target=0.114m object_grasped=False
+[INFO] [1789121022.971734755] [phase2_unclamped_run_node]: [step 04] dist=1.3053 raw_delta(rad)=[0.07980000227689743, -0.014299999922513962, -0.07970000058412552, -0.07909999787807465, -0.0729999989271164, 0.06069999933242798] gripper_raw=-1.702 -> gripper_target=0.108m object_grasped=False
+[INFO] [1789121026.028558699] [phase2_unclamped_run_node]: [step 05] dist=1.3145 raw_delta(rad)=[0.06319999694824219, 0.061900001019239426, -0.04659999907016754, -0.07989999651908875, -0.07670000195503235, 0.07190000265836716] gripper_raw=-2.338 -> gripper_target=0.122m object_grasped=False
+[INFO] [1789121029.336592860] [phase2_unclamped_run_node]: [step 06] dist=1.3037 raw_delta(rad)=[0.07909999787807465, 0.06610000133514404, -0.0020000000949949026, -0.06830000132322311, -0.06350000202655792, 0.07829999923706055] gripper_raw=-2.859 -> gripper_target=0.134m object_grasped=False
+[INFO] [1789121032.594842433] [phase2_unclamped_run_node]: [step 07] dist=1.2938 raw_delta(rad)=[0.07940000295639038, 0.05480000004172325, -0.07670000195503235, -0.0763000026345253, -0.06239999830722809, 0.0786999985575676] gripper_raw=-2.958 -> gripper_target=0.136m object_grasped=False
+[INFO] [1789121035.659515649] [phase2_unclamped_run_node]: [step 08] dist=1.2855 raw_delta(rad)=[0.0794999971985817, 0.0723000019788742, -0.07959999889135361, -0.07450000196695328, -0.004900000058114529, 0.07919999957084656] gripper_raw=-2.945 -> gripper_target=0.136m object_grasped=False
+[INFO] [1789121038.567254689] [phase2_unclamped_run_node]: [step 09] dist=1.2791 raw_delta(rad)=[0.07980000227689743, 0.07479999959468842, -0.07970000058412552, -0.07970000058412552, -0.07919999957084656, 0.07989999651908875] gripper_raw=-2.800 -> gripper_target=0.132m object_grasped=False
+[INFO] [1789121041.625622511] [phase2_unclamped_run_node]: [step 10] dist=1.2657 raw_delta(rad)=[0.07930000126361847, 0.060600001364946365, -0.07429999858140945, -0.07639999687671661, -0.0786999985575676, 0.07989999651908875] gripper_raw=-2.999 -> gripper_target=0.137m object_grasped=False
+[INFO] [1789121044.682086932] [phase2_unclamped_run_node]: [step 11] dist=1.2510 raw_delta(rad)=[0.0731000006198883, 0.06790000200271606, -0.0786999985575676, -0.07900000363588333, -0.0763000026345253, 0.07999999821186066] gripper_raw=-3.056 -> gripper_target=0.138m object_grasped=False
+[INFO] [1789121047.789025809] [phase2_unclamped_run_node]: [step 12] dist=1.2346 raw_delta(rad)=[0.04500000178813934, 0.020800000056624413, -0.07800000160932541, -0.04800000041723251, -0.07680000364780426, 0.07940000295639038] gripper_raw=-3.096 -> gripper_target=0.139m object_grasped=False
+[INFO] [1789121050.845684466] [phase2_unclamped_run_node]: [step 13] dist=1.2109 raw_delta(rad)=[0.07199999690055847, 0.060100000351667404, -0.07909999787807465, -0.07609999924898148, -0.07999999821186066, 0.07890000194311142] gripper_raw=-3.111 -> gripper_target=0.139m object_grasped=False
+[INFO] [1789121053.753069882] [phase2_unclamped_run_node]: [step 14] dist=1.1890 raw_delta(rad)=[0.02930000051856041, 0.047600001096725464, -0.06790000200271606, -0.07880000025033951, -0.07989999651908875, 0.07989999651908875] gripper_raw=-3.123 -> gripper_target=0.140m object_grasped=False
+[INFO] [1789121056.810658873] [phase2_unclamped_run_node]: [step 15] dist=1.1663 raw_delta(rad)=[-0.03700000047683716, 0.058800000697374344, -0.06560000032186508, -0.07270000129938126, -0.06300000101327896, 0.07999999821186066] gripper_raw=-3.113 -> gripper_target=0.139m object_grasped=False
+[INFO] [1789121059.868456405] [phase2_unclamped_run_node]: [step 16] dist=1.1476 raw_delta(rad)=[-0.03449999913573265, -0.06930000334978104, -0.07559999823570251, -0.07209999859333038, -0.03420000150799751, 0.06449999660253525] gripper_raw=0.858 -> gripper_target=0.051m object_grasped=False
+[INFO] [1789121063.727321211] [phase2_unclamped_run_node]: [step 17] dist=1.1073 raw_delta(rad)=[-0.041600000113248825, 0.07530000060796738, -0.07999999821186066, -0.07999999821186066, 0.022700000554323196, 0.004000000189989805] gripper_raw=3.088 -> gripper_target=0.001m object_grasped=False
+[INFO] [1789121067.234812033] [phase2_unclamped_run_node]: [step 18] dist=1.0961 raw_delta(rad)=[0.006000000052154064, 0.04859999939799309, -0.07999999821186066, -0.07959999889135361, 0.07509999722242355, 0.07660000026226044] gripper_raw=0.656 -> gripper_target=0.055m object_grasped=False
+[INFO] [1789121070.893067514] [phase2_unclamped_run_node]: [step 19] dist=1.0837 raw_delta(rad)=[-0.05079999938607216, 0.07810000330209732, -0.07930000126361847, -0.07989999651908875, -0.07900000363588333, -0.04190000146627426] gripper_raw=2.975 -> gripper_target=0.004m object_grasped=False
+[INFO] [1789121074.351470178] [phase2_unclamped_run_node]: [step 20] dist=1.0625 raw_delta(rad)=[0.04309999942779541, 0.025200000032782555, -0.06350000202655792, -0.07989999651908875, 0.025800000876188278, 0.01080000028014183] gripper_raw=3.115 -> gripper_target=0.001m object_grasped=False
+[INFO] [1789121077.408820945] [phase2_unclamped_run_node]: [step 21] dist=1.0462 raw_delta(rad)=[0.034299999475479126, 0.0786999985575676, -0.0026000000070780516, -0.07999999821186066, 0.002300000051036477, 0.00430000014603138] gripper_raw=3.139 -> gripper_target=0.000m object_grasped=False
+[INFO] [1789121080.315834364] [phase2_unclamped_run_node]: [step 22] dist=1.0503 raw_delta(rad)=[0.05590000003576279, 0.06430000066757202, -0.07970000058412552, -0.07959999889135361, -0.0608999989926815, 0.06800000369548798] gripper_raw=2.880 -> gripper_target=0.006m object_grasped=False
+[INFO] [1789121083.573146567] [phase2_unclamped_run_node]: [step 23] dist=1.0302 raw_delta(rad)=[0.06520000100135803, 0.007899999618530273, -0.0771000012755394, -0.07999999821186066, -0.030700000002980232, 0.07129999995231628] gripper_raw=2.932 -> gripper_target=0.005m object_grasped=False
+[INFO] [1789121086.629778717] [phase2_unclamped_run_node]: [step 24] dist=1.0055 raw_delta(rad)=[0.06040000170469284, 0.008899999782443047, -0.07829999923706055, -0.07999999821186066, -0.014800000004470348, 0.06120000034570694] gripper_raw=3.112 -> gripper_target=0.001m object_grasped=False
+[INFO] [1789121089.736973640] [phase2_unclamped_run_node]: [step 25] dist=0.9825 raw_delta(rad)=[0.029400000348687172, 0.0551999993622303, -0.07280000299215317, -0.07989999651908875, 0.0494999997317791, 0.06849999725818634] gripper_raw=3.019 -> gripper_target=0.003m object_grasped=False
+[INFO] [1789121092.793615339] [phase2_unclamped_run_node]: [step 26] dist=0.9745 raw_delta(rad)=[0.07329999655485153, -0.00570000009611249, -0.07989999651908875, -0.07999999821186066, 0.06830000132322311, 0.028200000524520874] gripper_raw=3.116 -> gripper_target=0.001m object_grasped=False
+[INFO] [1789121096.050492131] [phase2_unclamped_run_node]: [step 27] dist=0.9547 raw_delta(rad)=[0.04639999940991402, 0.06019999831914902, -0.07909999787807465, -0.07999999821186066, 0.0044999998062849045, 0.06610000133514404] gripper_raw=3.130 -> gripper_target=0.000m object_grasped=False
+[INFO] [1789121098.957711440] [phase2_unclamped_run_node]: [step 28] dist=0.9470 raw_delta(rad)=[0.023399999365210533, 0.07259999960660934, -0.07180000096559525, -0.07999999821186066, 0.07940000295639038, 0.062199998646974564] gripper_raw=2.793 -> gripper_target=0.008m object_grasped=False
+[INFO] [1789121102.215201310] [phase2_unclamped_run_node]: [step 29] dist=0.9487 raw_delta(rad)=[0.0478999987244606, 0.05640000104904175, -0.051100000739097595, -0.07999999821186066, 0.07530000060796738, 0.06689999997615814] gripper_raw=3.109 -> gripper_target=0.001m object_grasped=False
+[INFO] [1789121105.472348621] [phase2_unclamped_run_node]: [step 30] dist=0.9519 raw_delta(rad)=[0.0031999999191612005, -0.04399999976158142, -0.07930000126361847, -0.07999999821186066, 0.07840000092983246, 0.0729999989271164] gripper_raw=3.021 -> gripper_target=0.003m object_grasped=False
+[INFO] [1789121108.579612712] [phase2_unclamped_run_node]: [step 31] dist=0.9387 raw_delta(rad)=[0.06019999831914902, 0.03689999878406525, -0.055399999022483826, -0.07999999821186066, 0.07649999856948853, 0.049300000071525574] gripper_raw=2.068 -> gripper_target=0.024m object_grasped=False
+[INFO] [1789121111.837810300] [phase2_unclamped_run_node]: [step 32] dist=0.9415 raw_delta(rad)=[-0.019999999552965164, 0.06390000134706497, -0.0763000026345253, -0.07769999653100967, 0.0778999999165535, 0.04650000110268593] gripper_raw=-0.130 -> gripper_target=0.073m object_grasped=False
+[INFO] [1789121115.296686646] [phase2_unclamped_run_node]: [step 33] dist=0.9511 raw_delta(rad)=[-0.044599998742341995, -0.04019999876618385, -0.04830000177025795, -0.07620000094175339, 0.0786999985575676, 0.006099999882280827] gripper_raw=2.814 -> gripper_target=0.007m object_grasped=False
+Exception in thread Thread-1 (spin):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.12/threading.py", line 1010, in run
+    self._target(*self._args, **self._kwargs)
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 247, in spin
+    executor.spin_once()
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 757, in _wait_for_ready_callbacks
+    wait_set = _rclpy.WaitSet(
+               ^^^^^^^^^^^^^^^
+rclpy._rclpy_pybind11.RCLError: failed to initialize wait set: the given context is not valid, either rcl_init() was not called or rcl_shutdown() was called., at ./src/rcl/wait.c:130
+
+[killed]

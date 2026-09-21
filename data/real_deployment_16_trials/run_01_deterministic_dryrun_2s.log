@@ -1,0 +1,33 @@
+[INFO] [1789117180.540293340] [phase2_unclamped_run_node]: Loading SAC checkpoint: /home/anand/isaac_sac_checkpoints/repo/rl_logs_7hr_final/ur5e_isaac_sac_final.zip (legacy=True)
+[INFO] [1789117181.023372370] [phase2_unclamped_run_node]: Checkpoint loaded.
+[INFO] [1789117181.724437088] [phase2_unclamped_run_node]: Opening gripper and moving to real_home_position...
+[INFO] [1789117191.794947190] [phase2_unclamped_run_node]: move_to_start: reached and verified.
+[INFO] [1789117191.795299766] [phase2_unclamped_run_node]: === UNCLAMPED RUN: raw policy deltas (bounded +/-0.08rad), 6.0s/step, max 80 steps, gripper force=1.0 speed=0.3 ===
+[INFO] [1789117191.797713077] [phase2_unclamped_run_node]: [step 00] dist=1.2251 raw_delta(rad)=[0.07970000058412552, 0.03150000050663948, -0.07909999787807465, -0.07989999651908875, 0.033799998462200165, 0.037700001150369644] gripper_raw=-1.204 -> gripper_target=0.097m object_grasped=False
+[INFO] [1789117199.315659961] [phase2_unclamped_run_node]: [step 01] dist=1.2506 raw_delta(rad)=[0.07970000058412552, 0.04320000112056732, -0.07909999787807465, -0.07989999651908875, 0.0007999999797903001, 0.04450000077486038] gripper_raw=-1.360 -> gripper_target=0.100m object_grasped=False
+[INFO] [1789117206.482586819] [phase2_unclamped_run_node]: [step 02] dist=1.2667 raw_delta(rad)=[0.07980000227689743, 0.045099999755620956, -0.07900000363588333, -0.07989999651908875, -0.01769999973475933, 0.05139999836683273] gripper_raw=-1.711 -> gripper_target=0.108m object_grasped=False
+[INFO] [1789117213.649796262] [phase2_unclamped_run_node]: [step 03] dist=1.2781 raw_delta(rad)=[0.07980000227689743, 0.04820000007748604, -0.07880000025033951, -0.07989999651908875, -0.030300000682473183, 0.05649999901652336] gripper_raw=-2.011 -> gripper_target=0.115m object_grasped=False
+[INFO] [1789117220.615427306] [phase2_unclamped_run_node]: [step 04] dist=1.2849 raw_delta(rad)=[0.07989999651908875, 0.05009999871253967, -0.0786999985575676, -0.07989999651908875, -0.034699998795986176, 0.06870000064373016] gripper_raw=-2.371 -> gripper_target=0.123m object_grasped=False
+[INFO] [1789117227.831146290] [phase2_unclamped_run_node]: [step 05] dist=1.2883 raw_delta(rad)=[0.07989999651908875, 0.05860000103712082, -0.0778999999165535, -0.07970000058412552, -0.04089999943971634, 0.07540000230073929] gripper_raw=-2.635 -> gripper_target=0.129m object_grasped=False
+[INFO] [1789117234.996954072] [phase2_unclamped_run_node]: [step 06] dist=1.2872 raw_delta(rad)=[0.07989999651908875, 0.06289999932050705, -0.07750000059604645, -0.07930000126361847, -0.051100000739097595, 0.07769999653100967] gripper_raw=-2.811 -> gripper_target=0.133m object_grasped=False
+Exception in thread Thread-1 (spin):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.12/threading.py", line 1010, in run
+    self._target(*self._args, **self._kwargs)
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/__init__.py", line 247, in spin
+    executor.spin_once()
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 926, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 907, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 877, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/ros/jazzy/lib/python3.12/site-packages/rclpy/executors.py", line 785, in _wait_for_ready_callbacks
+    raise ExternalShutdownException()
+rclpy.executors.ExternalShutdownException
+
+[killed]

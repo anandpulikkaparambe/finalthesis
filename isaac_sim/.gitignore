@@ -1,0 +1,7 @@
+assets/usd/
+rl_logs/
+__pycache__/
+*.pyc
+.vscode/
+*.log
+assets/urdf/ur5e_robotiq140.isaac.urdf
