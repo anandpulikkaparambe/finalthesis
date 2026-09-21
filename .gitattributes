@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.zip binary
+*.stl binary
+*.dae -text

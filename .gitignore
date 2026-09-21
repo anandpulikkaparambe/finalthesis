@@ -1,0 +1,19 @@
+assets/usd/
+rl_logs/
+__pycache__/
+*.pyc
+.vscode/
+*.log
+assets/urdf/ur5e_robotiq140.isaac.urdf
+# thesis-driven additions
+__pycache__/
+*.pyc
+.pytest_cache/
+runs/
+eval_out/
+validate_telemetry/
+demo_telemetry/
+*.npz
+rl_logs/
+# data logs are results, keep them
+!data/**/*.log
