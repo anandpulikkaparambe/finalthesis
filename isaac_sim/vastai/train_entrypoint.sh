@@ -26,6 +26,14 @@ BUFFER_SIZE="${BUFFER_SIZE:-1000000}"
 cd "$(dirname "$0")/.."
 source /venv/isaac51/bin/activate
 
+if [ "$DEVICE" = "cuda" ]; then
+  # confirmed live 2026-09-22: a later `uv pip install` during setup can silently swap in a torch
+  # build the driver can't run (torch.cuda.is_available() -> False), and train.py itself does not
+  # check this -- SB3 just prints "Using cpu device" and trains for hours at a small fraction of
+  # the speed this instance was rented for, with no error. Fail fast here instead.
+  python -c 'import torch; assert torch.cuda.is_available(), f"torch {torch.__version__} (cuda {torch.version.cuda}) cannot see the GPU -- re-run: uv pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall"'
+fi
+
 mkdir -p "$LOG_DIR"
 
 RESUME_ARG=()

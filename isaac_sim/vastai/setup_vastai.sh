@@ -62,10 +62,16 @@ export OMNI_KIT_ACCEPT_EULA=YES
 # failing the whole install with "No solution found when resolving dependencies".
 uv pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match
 
-echo "=== Installing training deps (without letting them touch the pinned torch build) ==="
+echo "=== Installing training deps ==="
 uv pip install stable_baselines3 gymnasium pytest pandas matplotlib
-echo "torch after stable_baselines3 install (should be unchanged from above):"
-python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())'
+
+echo "=== Re-pinning torch to cu128 (confirmed live 2026-09-22: the isaacsim/training-deps installs above silently"
+echo "    pulled in a newer torch build (2.14.0+cu130) that this driver's max CUDA (12.8) can't run -- torch.cuda"
+echo "    .is_available() came back False and the whole training run silently fell back to CPU with no error, just"
+echo "    a UserWarning buried in the log. A print-only check here previously did NOT catch this since set -e"
+echo "    doesn't fail on a print. Force-reinstalling last and hard-asserting now instead.) ==="
+uv pip install torch --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
+python -c 'import torch; assert torch.cuda.is_available(), f"torch {torch.__version__} (cuda {torch.version.cuda}) cannot see the GPU -- check driver_max_cuda vs the installed build (base.md section 12 in the instance agent guide)"; print("torch", torch.__version__, "cuda", torch.version.cuda, "-- GPU OK")'
 
 echo "=== Cloning finalthesis (public repo, no key needed) ==="
 if [ ! -d /workspace/finalthesis ]; then
