@@ -32,10 +32,42 @@ parser.add_argument(
         "drop this flag."
     ),
 )
+parser.add_argument(
+    "--gripper-box-collision",
+    action="store_true",
+    help=(
+        "Keep the 1 cm box collision proxies the Gazebo description uses for the Robotiq knuckles "
+        "and fingers. By default they are replaced by the real Robotiq 2F-140 collision meshes "
+        "(meshes/collision/robotiq_arg2f_140_*.stl): with the boxes, the closed gripper leaves the "
+        "pads ~5 cm apart and a 2 cm cube cannot be grasped (see docs/VALIDATION_CHECKLIST.md)."
+    ),
+)
 args = parser.parse_args()
 
 with open(args.urdf_path, "r") as f:
     urdf = f.read()
+
+GRIPPER_MESH_LINKS = {
+    "outer_knuckle": "robotiq_arg2f_140_outer_knuckle.stl",
+    "outer_finger": "robotiq_arg2f_140_outer_finger.stl",
+    "inner_knuckle": "robotiq_arg2f_140_inner_knuckle.stl",
+    "inner_finger": "robotiq_arg2f_140_inner_finger.stl",
+}
+if not args.gripper_box_collision:
+    n_swapped = 0
+    for side in ("left", "right"):
+        for part, stl in GRIPPER_MESH_LINKS.items():
+            pat = re.compile(
+                r'(<link name="%s_%s">.*?<collision>\s*<origin[^>]*/>\s*<geometry>)\s*<box [^>]*/>(\s*</geometry>)'
+                % (side, part),
+                re.S,
+            )
+            repl = (
+                r'\1<mesh filename="package://robotiq_2f_gripper_description/meshes/collision/%s"/>\2' % stl
+            )
+            urdf, n = pat.subn(repl, urdf, count=1)
+            n_swapped += n
+    print(f"Gripper collision boxes replaced by meshes: {n_swapped}/8")
 
 mesh_root = args.meshes_root.replace("\\", "/")
 urdf = urdf.replace("package://ur_description", f"{mesh_root}/ur_description")
