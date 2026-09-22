@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 from ur5e_grasp import spec
 from ur5e_grasp.config import load_config
-from ur5e_grasp.demo_controller import ReachGraspDemoController
+from ur5e_grasp.demo_controller import HOME_Q, ReachGraspDemoController
 from ur5e_grasp import ur5e_grasp_env as E
 
 cfg = load_config(args.config)
@@ -48,22 +48,30 @@ def record(name, status, detail):
     print(f"[{status}] {name}: {detail}", flush=True)
 
 
-def run_constant(delta, joint_index, steps):
-    """Drive one joint at a constant delta; returns (min_ee_z, min_self, reason, gap_rad)."""
-    obs, _ = env.reset(seed=1)
+def run_towards(target_q, steps, seed=1):
+    """Drive the arm from home towards a full 6-joint target, one clipped delta per step.
+
+    Returns (min_ee_z, min_self, reason, final_q). Unlike run_constant (one joint, a repeated
+    delta that isn't clamped to the joint's own reachable range), this can target configurations
+    that need more than one joint to move together -- both the self-collision and table checks
+    below were producing vacuous results (see their own comments) because a single-joint sweep
+    from HOME_Q never actually got close to a real collision within the step budget.
+    """
+    obs, _ = env.reset(seed=seed)
     reason, min_z, min_self = None, np.inf, np.inf
-    a = spec.neutral_action()
-    a[joint_index] = delta
+    target_q = np.asarray(target_q, dtype=float)
     for _ in range(steps):
+        q = obs[spec.OBS_JOINT_POS].astype(float)
+        a = spec.neutral_action()
+        a[:6] = np.clip(target_q - q, -spec.MAX_JOINT_DELTA_RAD, spec.MAX_JOINT_DELTA_RAD)
         obs, r, term, trunc, info = env.step(a)
         min_z = min(min_z, float(obs[14]))
         min_self = min(min_self, info["self_clearance"])
         if term or trunc:
             reason = info.get("termination_reason", "timeout")
             break
-    target = env._robot.get_joint_position_targets()[0][joint_index] if hasattr(env._robot, "get_joint_position_targets") else np.nan
-    actual = env._robot.get_joint_positions(joint_indices=[joint_index])[0, 0]
-    return min_z, min_self, reason, float(abs(target - actual))
+    final_q = env._robot.get_joint_positions()[0][:6]
+    return min_z, min_self, reason, final_q
 
 
 # 1. contact source
@@ -86,26 +94,43 @@ ok = max_vel < 2.0 and reason in (None, "timeout")
 record("hold-pose stability", "PASS" if ok else "FAIL", f"max arm joint speed {max_vel:.2f} rad/s, ended: {reason}")
 
 # 3. self-collision
-outcomes = []
-for sign in (+1.0, -1.0):
-    z, s, why, gap = run_constant(sign * 0.08, 2, 80)
-    outcomes.append((sign, why, s, gap))
-    print(f"    elbow {sign:+.0f}: ended={why} min_self_clearance={s:.3f} target-actual gap={gap:.2f} rad", flush=True)
-hit = any(o[1] == "Self Collision" for o in outcomes)
-blocked = any(o[3] > 0.3 for o in outcomes)
-record("self-collision", "PASS" if (hit or blocked) else "INFO",
-       "detected/blocked" if (hit or blocked) else "neither direction reached a self-collision within 80 steps; try other joints")
+# A single-joint sweep from HOME_Q (the old check) never actually reaches a self-collision within
+# a sane step budget, so it always reported [INFO] regardless of whether real self-collision
+# detection works at all -- confirmed live 2026-09-22 that the analytical proxy's own minimum
+# clearance in that sweep was -0.001, nowhere near the env's -0.03 termination threshold. Drive
+# instead at a configuration a small offline search (K.self_clearance over a joint-1/joint-2 grid)
+# confirmed genuinely overlaps: HOME_Q with shoulder_lift=0.4, elbow=2.8 (shoulder-forearm
+# clearance -0.13, comfortably past the threshold).
+self_target = HOME_Q.copy()
+self_target[1], self_target[2] = 0.4, 2.8
+z, s, why, final_q = run_towards(self_target, steps=200)
+gap = float(np.linalg.norm(self_target - final_q))
+print(f"    towards self-collision config: ended={why} min_self_clearance={s:.3f} final-target gap={gap:.2f} rad", flush=True)
+hit = why == "Self Collision"
+overlapped = s < -0.005  # genuinely overlapped per the analytical proxy
+# NOT gap>0.3 alone as "blocked" -- confirmed live 2026-09-22 that a 60-step budget produced
+# gap=3.16 with min_self_clearance staying positive throughout (0.007): the arm was moving
+# noticeably slower than spec.MAX_JOINT_DELTA_RAD would suggest (fighting gravity/inertia at this
+# extended pose, not a collision), so a big gap on its own is not evidence of being blocked by
+# anything -- it needs to be paired with actually running out of steps while still far off target.
+ran_out = gap > 0.3 and why is None
+record("self-collision", "PASS" if (hit or overlapped) else "FAIL",
+       "termination fired" if hit else ("overlapping" if overlapped else
+       f"reached the known-overlapping config with no collision response at all (final gap {gap:.2f} rad{', ran out of steps' if ran_out else ''})"))
 
 # 4. table
-worst = np.inf
-seen_table = False
-for joint, sign in ((1, +1.0), (1, -1.0), (2, +1.0), (2, -1.0)):
-    z, s, why, gap = run_constant(sign * 0.08, joint, 100)
-    worst = min(worst, z)
-    seen_table |= why == "Table Collision"
-    print(f"    joint {joint + 1} {sign:+.0f}: ended={why} min_ee_z={z:.3f} (table top {E.TABLE_TOP_Z})", flush=True)
-depth = E.TABLE_TOP_Z - worst
-record("table", "PASS" if (seen_table or depth < 0.06) else "FAIL",
+# The old check's PASS condition (`depth < 0.06`) was backwards: depth is negative whenever the
+# arm never gets near the table, so "the arm stayed 80cm above the table" satisfied `depth < 0.06`
+# and passed vacuously -- confirmed live 2026-09-22 (0.000 m penetration, no termination, still
+# [PASS]). Drive instead at a configuration confirmed offline to put the end-effector well below
+# the table plane (K.table_clearance over a shoulder_lift sweep): HOME_Q with shoulder_lift=0.6.
+table_target = HOME_Q.copy()
+table_target[1] = 0.6
+z, s, why, final_q = run_towards(table_target, steps=200)
+depth = E.TABLE_TOP_Z - z
+seen_table = why == "Table Collision"
+print(f"    towards table config: ended={why} min_ee_z={z:.3f} (table top {E.TABLE_TOP_Z}) depth={depth:.3f}", flush=True)
+record("table", "PASS" if (seen_table or depth > 0.01) else "FAIL",
        f"deepest end-effector penetration {max(depth, 0.0):.3f} m, table-collision termination seen: {seen_table}")
 
 # 5. demonstration grasp
@@ -115,10 +140,12 @@ wins, reasons, peak_force = 0, {}, 0.0
 for ep in range(args.demo_episodes):
     obs, _ = env.reset(seed=100 + ep)
     ctl.reset()
-    for _ in range(300):
-        obs, r, term, trunc, info = env.step(ctl.act(obs))
+    force = None
+    for _ in range(700):  # descend+close alone can take ~500 (their own max_steps defaults) + arc/above
+        obs, r, term, trunc, info = env.step(ctl.act(obs, contact_force=force))
         if env._contact_source == "sensor":
             fl, fr = env._contact_sensor.read()
+            force = (fl, fr)
             peak_force = max(peak_force, min(fl, fr))
         if term or trunc:
             break

@@ -24,7 +24,7 @@ parser.add_argument("--config", type=str, default="")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--curriculum-level", type=float, default=1.0)
 parser.add_argument("--keep-failures", action="store_true")
-parser.add_argument("--max-steps", type=int, default=300)
+parser.add_argument("--max-steps", type=int, default=700)  # the descend+close phases alone can take up to ~500 (demo_controller.py's own descend_max_steps/close_max_steps defaults), plus arc/above
 parser.add_argument("--no-headless", dest="headless", action="store_false")
 parser.set_defaults(headless=True)
 args = parser.parse_args()
@@ -47,7 +47,8 @@ for ep in range(args.episodes):
     ep_rows = []
     info = {}
     for _ in range(args.max_steps):
-        action = ctl.act(obs)
+        force = env._contact_sensor.read() if env._contact_source == "sensor" else None
+        action = ctl.act(obs, contact_force=force)
         nxt, reward, terminated, truncated, info = env.step(action)
         ep_rows.append((obs, action, reward, nxt, terminated))
         obs = nxt
