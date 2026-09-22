@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from ur5e_grasp import kinematics as K
 from ur5e_grasp import spec
@@ -52,4 +53,8 @@ def test_close_phase_ramps_gripper_closed():
     # enough steps for any close_ramp down to ~0.1 to fully ramp open -> closed (a span of 2*pi)
     for _ in range(80):
         a = ctl.act(_obs(q, grip, target))
-    assert a[6] == spec.GRIPPER_ACTION_CLOSED
+    # a[6] is float32 (act() builds the action array as float32); GRIPPER_ACTION_CLOSED is
+    # Python's float64 pi, so exact equality fails on the float32 rounding alone (e.g.
+    # 3.1415927 vs 3.141592653589793) regardless of platform -- confirmed live on a Vast.ai
+    # box where this bit, even though it happened to pass locally on Windows.
+    assert a[6] == pytest.approx(spec.GRIPPER_ACTION_CLOSED, abs=1e-6)
