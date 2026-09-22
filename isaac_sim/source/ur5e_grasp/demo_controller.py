@@ -202,11 +202,19 @@ class ReachGraspDemoController:
                 self._contact_latched_steps += 1
             elif contact_force is not None and max(contact_force) > 0.0:
                 # one pad touching, not the other yet -- confirmed live 2026-09-22 that freezing
-                # here (the original "either pad" rule) traps nothing: the untouched pad's own
-                # gap is still open, so the target just slides along the one contacting pad
-                # instead of ever meeting the second one. Keep closing, just gently, so the second
-                # pad still gets a chance to arrive before the target is pushed out of reach.
-                self._close_a = min(self._close_a + self.close_ramp * 0.25, spec.GRIPPER_ACTION_CLOSED)
+                # the ramp entirely here (the original "either pad" rule) traps nothing: the
+                # untouched pad's own gap is still open, so the target just slides along the one
+                # contacting pad instead of ever meeting the second one. A gentle 0.25x trickle
+                # (tried next) still often loses the race against a light, low-friction target
+                # sliding away before the second pad arrives. What the 0.25x version was missing:
+                # the arm's own goal tracking during "close"/"lift" already re-reads the target's
+                # LIVE physical position every step (see _get_obs's target_pos / this act()'s
+                # target_base, both read fresh from the lego's true world pose, not a stale goal)
+                # and re-centers the tool over it via dls_step -- but that correction was competing
+                # against the ramp continuing to push the pads together at the same time. Freezing
+                # the ramp completely (not just slowing it) while only one pad touches gives that
+                # existing re-centering a real window to catch up before the gap closes further.
+                pass
             else:
                 self._close_a = min(self._close_a + self.close_ramp, spec.GRIPPER_ACTION_CLOSED)
             action[6] = self._close_a

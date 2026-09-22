@@ -4,7 +4,6 @@ __pycache__/
 *.pyc
 .vscode/
 *.log
-assets/urdf/ur5e_robotiq140.isaac.urdf
 # thesis-driven additions
 __pycache__/
 *.pyc
@@ -16,5 +15,6 @@ demo_telemetry/
 *_telemetry/
 *.npz
 rl_logs/
+report_figs/
 # data logs are results, keep them
 !data/**/*.log

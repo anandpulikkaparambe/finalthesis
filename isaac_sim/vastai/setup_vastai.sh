@@ -58,7 +58,7 @@ export OMNI_KIT_ACCEPT_EULA=YES
 uv pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com --index-strategy unsafe-best-match
 
 echo "=== Installing training deps (without letting them touch the pinned torch build) ==="
-uv pip install stable_baselines3 gymnasium pytest
+uv pip install stable_baselines3 gymnasium pytest pandas matplotlib
 echo "torch after stable_baselines3 install (should be unchanged from above):"
 python -c 'import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())'
 
