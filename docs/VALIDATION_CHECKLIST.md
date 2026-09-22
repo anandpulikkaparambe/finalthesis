@@ -245,3 +245,44 @@ feedback, or fixing the remaining small left/right pad timing asymmetry) is like
 grasp (both pads gripping simultaneously with force above `min_pad_force_n` for `hold_steps`) on
 the 2cm target -- the closest state reached is repeatable, real contact that currently pushes the
 target away rather than catching it.
+
+### Follow-up: friction/material fix, stick-slip diagnosis, still no held grasp (2026-09-22, same session)
+
+Chased the "cube slides away instead of being gripped" problem further:
+
+1. **Found the finger pads had no physics material bound at all** (PhysX default), and the
+   lego's own material had `staticFriction=0.2 < dynamicFriction=1.0` -- backwards from a real
+   material and low enough that almost any tangential touch starts it sliding. Bound an explicit
+   material to both pads and the lego. A first attempt at a *high*-friction material (0.9/0.8)
+   made the problem **worse**, not better -- confirmed live: with a glancing, asymmetric touch
+   (one pad reaching the target well before the other), high friction grabs and *carries* the
+   target along with that pad's motion instead of letting it deflect a little, producing a bigger
+   excursion. That result is itself useful: it confirms the real problem is contact timing, not
+   friction. Settled on a modest 0.4/0.4 (`ur5e_grasp_env.py`) pending the real fix.
+
+2. **Ruled out close speed.** Swept `close_ramp` from 0.02 to 0.4 (with an extended episode
+   budget for the slow ones) -- all of them still end with the target pushed away and the pads
+   fully closed on empty air (padsep back at the 7.4mm free-air minimum, 0 N).
+
+3. **Found the gripper's own closing motion has a real stick-slip pattern**: grip frozen for tens
+   of steps, then a sudden jump of several tens of degrees, repeating. Traced it to
+   `physxMimicJoint:rotX:naturalFrequency`, which imports at 25.0 (soft) on the five
+   PhysX-mimic-constrained follower joints (which have no drive of their own -- purely
+   mimic-constrained). Raised to 100.0 alongside the existing dampingRatio=1.0 fix
+   (`ur5e_grasp_env.py`, same block). This visibly smooths the close (no more sudden jumps in the
+   traced joint positions) and is worth keeping regardless, but on its own it did not produce a
+   grasp -- instead the smoother motion now closes past the target with **zero** contact at every
+   grasp_height_m tried (-0.03 to 0.04), instead of the small-but-real contact seen before. That
+   swept range did not contain the alignment needed.
+
+**Where this leaves things:** three real, separate fixes landed this session (friction material,
+mimic naturalFrequency, plus everything in the two entries above), each independently verified,
+but the grasp still doesn't close. The remaining gap looks like a genuine small residual
+alignment error (most likely a few mm, given the closing behaviour is now clean/monotonic rather
+than erratic) that the current `grasp_height_m` sweep didn't happen to hit. A finer 2D sweep
+(height and a small lateral nudge together, not one at a time) is the natural next step, along
+with checking whether the ~1.5-2cm descend-convergence residual documented above (still present,
+`close_dist_m` was loosened to accept it rather than fixing it) is itself part of the remaining
+gap.
+
+**Honest status: still nothing trained, no held grasp achieved.**

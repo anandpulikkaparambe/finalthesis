@@ -234,7 +234,7 @@ class Ur5eGraspEnv(gym.Env):
         # Deferred imports: these modules touch omni/isaacsim internals that only exist
         # once SimulationApp has run.
         import omni.usd
-        from pxr import Usd, UsdPhysics
+        from pxr import Usd, UsdPhysics, UsdShade
 
         from isaacsim.core.api import World
         from isaacsim.core.api.objects import DynamicCuboid, FixedCuboid
@@ -516,6 +516,31 @@ class Ur5eGraspEnv(gym.Env):
                 color=np.array([1.0, 0.0, 0.0]),
             )
         )
+        # DynamicCuboid's own default physics material (confirmed live 2026-09-22:
+        # /World/Physics_Materials/physics_material_2) has staticFriction 0.2 < dynamicFriction
+        # 1.0 -- backwards from a real material (static is normally >= dynamic) and low enough
+        # that almost any tangential contact starts the cube sliding before a second pad can also
+        # reach it, which is what was actually happening: the demo grasp got real, repeatable
+        # contact force on one pad, but the target slid away instead of being trapped, identically
+        # across every close-speed tried. The finger pads had no physics material bound at all
+        # (PhysX default). Author an explicit, higher-friction material for both.
+        grip_material_path = "/World/Physics_Materials/grip_material"
+        grip_material_prim = UsdShade.Material.Define(stage, grip_material_path)
+        grip_material = UsdPhysics.MaterialAPI.Apply(grip_material_prim.GetPrim())
+        # A high-friction material (tried 0.9/0.8) made things WORSE, not better -- confirmed
+        # live 2026-09-22: with a glancing, asymmetric touch (one pad reaching the target well
+        # before the other), high friction grabs and CARRIES the target along with that one pad's
+        # motion instead of letting it slip past with a small deflection, producing a bigger
+        # excursion, not a grip. That confirmed the real problem is contact timing/alignment, not
+        # friction -- kept modest (closer to the lego's own original material) pending a real fix.
+        grip_material.CreateStaticFrictionAttr().Set(0.4)
+        grip_material.CreateDynamicFrictionAttr().Set(0.4)
+        grip_material.CreateRestitutionAttr().Set(0.0)
+        UsdShade.MaterialBindingAPI.Apply(stage.GetPrimAtPath("/World/Lego")).Bind(
+            UsdShade.Material(stage.GetPrimAtPath(grip_material_path)),
+            bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+            materialPurpose="physics",
+        )
 
         # Sorting bin -- see BIN_POSITION/BIN_SIZE comment above. Static, not yet used by
         # any reward/termination logic.
@@ -553,6 +578,12 @@ class Ur5eGraspEnv(gym.Env):
         self._base_link = RigidPrim(prim_paths_expr=base_link_path, name=f"ur5e_{env_id}_base_link")
         self._world.scene.add(self._left_pad)
         self._world.scene.add(self._right_pad)
+        for _pad_path in (left_pad_path, right_pad_path):
+            UsdShade.MaterialBindingAPI.Apply(stage.GetPrimAtPath(_pad_path)).Bind(
+                UsdShade.Material(stage.GetPrimAtPath(grip_material_path)),
+                bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+                materialPurpose="physics",
+            )
         self._world.scene.add(self._base_link)
 
         self._world.reset()
@@ -635,6 +666,13 @@ class Ur5eGraspEnv(gym.Env):
         for _jname in ({} if self._nv_gripper else MIMIC_JOINT_MULTIPLIERS):
             damping_attr = mimic_joint_prims[_jname].GetAttribute("physxMimicJoint:rotX:dampingRatio")
             damping_attr.Set(1.0)
+            # naturalFrequency imports at 25.0 -- soft enough that the demo grasp shows a real
+            # stick-slip pattern while closing (confirmed live 2026-09-22: grip frozen for tens of
+            # steps, then a sudden jump of several tens of degrees, repeatedly), which is a
+            # plausible way a light target gets flicked away instead of gripped. Stiffen it.
+            nat_freq_attr = mimic_joint_prims[_jname].GetAttribute("physxMimicJoint:rotX:naturalFrequency")
+            if nat_freq_attr:
+                nat_freq_attr.Set(float(os.environ.get("MIMIC_NAT_FREQ", "100.0")))
 
         os.makedirs(log_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
