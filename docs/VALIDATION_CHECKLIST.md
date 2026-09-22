@@ -189,3 +189,59 @@ or something closer to the real linkage.
 **Honest status:** nothing has been trained. No config in this repo has a demonstrated, real-PhysX
 grasp on the 2cm target -- the closest state reached is full, stable finger closure with the pads
 8.5cm apart, well short of touching a 2cm cube.
+
+### Follow-up: mimic gearing sign was also inverted; real contact achieved, grasp not yet closed (2026-09-22, same session)
+
+Continued from the follower-joint-limit fix above. Re-derived the correct mimic gearing signs
+independently two ways and found a second, separate bug:
+
+1. **Analytical**: wrote a standalone forward-kinematics model (`fk_gripper.py`, not checked in)
+   directly from the gripper URDF's own link origins for both fingers. With the URDF's own
+   multiplier signs (which is what `MIMIC_JOINT_MULTIPLIERS` already encodes) it predicts the
+   pads converge to **7mm apart** at `finger_joint`'s own 0.70 rad limit -- essentially touching.
+2. **Empirical**: reading back each follower joint's achieved position after commanding
+   `finger_joint` showed the *opposite* sign from what `ur5e_grasp_env.py` was assigning to the
+   PhysX mimic's `gearing` attribute, for all 5/5 joints, consistently.
+
+Both point the same way: `PhysxMimicJointAPI`'s gearing convention on this Isaac Sim build is not
+simply "follower = gearing * reference" the way the schema docs and the URDF's own
+`<mimic multiplier=...>` tag both imply -- there's an extra sign flip. Fixed by negating what's
+assigned to the attribute (`ur5e_grasp_env.py`, same block as the limit fix). Result: pads now
+close to **7.4mm apart in free air**, matching the analytical prediction almost exactly.
+
+That still wasn't enough for a real grasp -- with the (now-corrected) gripper, the scripted demo
+approach was landing about 2cm off target even where the IK had visibly converged. Root cause:
+`kinematics.py`'s `TOOL_OFFSET`/`TOOL_OFFSET_PER_GRIP` (the flange-to-pad-midpoint calibration)
+was fitted against the *old, buggy-sign* gripper's telemetry, so it predicted the pad moving in
+close to the opposite direction as the gripper closed. Re-measured directly against the corrected
+gripper (two joint configs, consistent to 4 decimals; also matches the fk_gripper.py prediction to
+3 decimals) and updated in `kinematics.py`.
+
+A third, separate problem then showed up: the demo controller's per-step differential-IK descend
+approach turned out to run right through a wrist singularity (`HOME_Q`'s own `wrist_2 ~ -pi/2`,
+which the straight-down approach axis keeps it near) -- confirmed live it settles into a
+persistent, non-decaying oscillation a few cm from the target instead of converging, reproduced
+with the axis-alignment task on and off and with several step sizes, so it wasn't simply
+"overshoot from too large a step". Fixed by switching descend to solve-then-track: converge the
+IK once offline (`kinematics.solve_ik`, pure kinematics, no per-step re-linearization noise) into
+a fixed joint-angle target when descend starts, then track that fixed target with a plain
+joint-space step instead of continuously re-solving. A `yaw_gain` wrist alignment override was
+also fighting that joint-space tracking's own (already axis-aligned) wrist_3 command and had to be
+disabled specifically during descend.
+
+**Where this leaves things:** the scripted demo now reaches real, repeatable PhysX contact -- the
+target cube visibly gets pushed by the closing fingers, with genuine (if small, ~0.01N) two-pad
+contact forces, a categorical change from every earlier state (0.00N, gripper closing on nothing).
+It has not yet produced a *held* grasp: the target is light enough, and the two pads apparently
+still reach it with enough of a timing/alignment mismatch, that it slides away before both sides
+trap it, rather than being squeezed. `close_dist_m`, `grasp_height_m` and `close_ramp` were
+retuned to the values that produce this (best found: `grasp_height_m~0.0`, `close_dist_m=0.02` --
+the descend approach has a small, genuinely-converged residual of ~1.6cm, not 1.5cm, so the old
+default never triggered -- `close_ramp~0.15-0.2`) and are now the controller's defaults, but this
+is empirical tuning, not a first-principles fix, and further iteration (slower approach with force
+feedback, or fixing the remaining small left/right pad timing asymmetry) is likely needed.
+
+**Honest status:** still nothing has been trained. No config in this repo has confirmed a *held*
+grasp (both pads gripping simultaneously with force above `min_pad_force_n` for `hold_steps`) on
+the 2cm target -- the closest state reached is repeatable, real contact that currently pushes the
+target away rather than catching it.

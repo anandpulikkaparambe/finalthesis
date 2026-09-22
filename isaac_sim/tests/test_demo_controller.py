@@ -49,6 +49,7 @@ def test_close_phase_ramps_gripper_closed():
     grip = 0.0
     a = ctl.act(_obs(q, grip, target))
     assert spec.GRIPPER_ACTION_OPEN < a[6] < spec.GRIPPER_ACTION_CLOSED
-    for _ in range(20):
+    # enough steps for any close_ramp down to ~0.1 to fully ramp open -> closed (a span of 2*pi)
+    for _ in range(80):
         a = ctl.act(_obs(q, grip, target))
     assert a[6] == spec.GRIPPER_ACTION_CLOSED

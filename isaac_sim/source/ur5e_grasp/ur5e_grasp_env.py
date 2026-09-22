@@ -363,7 +363,20 @@ class Ur5eGraspEnv(gym.Env):
             gearing_attr = mimic_joint_prims[jname].GetAttribute("physxMimicJoint:rotX:gearing")
             if not gearing_attr:
                 raise RuntimeError(f"{jname} has no physxMimicJoint:rotX:gearing attribute to fix.")
-            gearing_attr.Set(expected_gearing)
+            # An extra sign flip relative to MIMIC_JOINT_MULTIPLIERS' own values -- confirmed live
+            # 2026-09-22: reading back each follower's ACHIEVED position after commanding
+            # finger_joint showed the opposite sign from what was assigned here for all 5/5 joints
+            # (e.g. left_inner_finger_joint assigned +1 read back consistently negative), and an
+            # independent analytical forward-kinematics check built directly from the URDF's own
+            # link origins (fk_gripper.py, not checked into the repo) confirms the URDF's OWN
+            # multiplier signs (i.e. NOT this extra flip) bring the two pads to within ~7mm at
+            # full closure, while the flipped sign leaves them several cm apart -- matching what
+            # was actually observed (pads 8.5cm apart at finger_joint's own 0.70 rad limit) before
+            # this fix. Root cause not pinned down (PhysxMimicJointAPI's own gearing convention
+            # apparently isn't simply "follower = gearing * reference" the way the schema docs and
+            # the URDF's <mimic multiplier=...> tag both imply), but the sign is now verified
+            # correct both analytically and empirically.
+            gearing_attr.Set(-expected_gearing)
             # The importer's OWN limits on these 5 follower joints don't match what the URDF itself
             # authors (confirmed live 2026-09-22: left_inner_knuckle_joint imports as
             # [-0.84, 0.14] rad, not the URDF's own symmetric +-0.8757) and are far too narrow for

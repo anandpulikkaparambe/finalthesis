@@ -9,6 +9,7 @@ calibrated UR5e model instead. Phases:
   above    move above the target
   descend  go down onto the target with the approach axis pointing down
   close    close the gripper and hold
+  lift     verify the grasp by lifting the target clear of the table
 
 It works on the same 23-D observation the policy sees, so it runs in the environment with
 no extra state. Experimental: the demonstrations are only as good as the calibrated
@@ -28,11 +29,28 @@ def _wrap(angle):
 
 
 class ReachGraspDemoController:
-    def __init__(self, above_m=0.08, close_dist_m=0.015, pre_dist_m=0.03, grasp_height_m=0.03, close_ramp=0.4,
-                 close_settle_steps=20, close_max_steps=150, lift_m=0.10, yaw_gain=1.0, arc_radius_m=0.5,
+    def __init__(self, above_m=0.08, close_dist_m=0.02, pre_dist_m=0.03, grasp_height_m=0.0, close_ramp=0.15,
+                 close_settle_steps=20, close_max_steps=250, descend_settle_steps=10, descend_max_steps=250,
+                 descend_max_joint_step=0.01,
+                 lift_m=0.10, yaw_gain=1.0, arc_radius_m=0.5,
                  arc_height_m=0.35, arc_step_rad=0.12, axis_target=(0.0, 0.0, -1.0), axis_gain=1.0):
         self.above_m = above_m
         self.close_dist_m = close_dist_m
+        # Continuously re-solving dls_step every env.step() (re-linearizing around the REAL,
+        # physically-evolving joint state each time) does not actually converge for the last few
+        # cm of the descend approach -- confirmed live 2026-09-22: it settles into a persistent
+        # ~2-3cm limit cycle, reproduced with the axis-alignment task on and off and with several
+        # max_step sizes, so it isn't simply "too large a step". A FIXED joint-angle target,
+        # solved once offline (K.solve_ik, pure kinematics, no per-step re-linearization noise)
+        # when descend starts and then tracked with a plain joint-space P step, converges cleanly
+        # instead (confirmed live: the same physical arm holds a fixed joint-angle target with no
+        # oscillation at all). descend_max_joint_step caps that per-step joint-space P step.
+        self.descend_max_joint_step = descend_max_joint_step
+        self.descend_settle_steps = descend_settle_steps
+        self.descend_max_steps = descend_max_steps
+        self._descend_steps = 0
+        self._descend_close_steps = 0
+        self._descend_q = None
         # Lift once the CLOSE COMMAND has fully ramped to spec.GRIPPER_ACTION_CLOSED (how long that
         # takes depends on close_ramp, so a step count alone was wrong -- confirmed live 2026-09-22:
         # lift_after_steps=14 fired while grip was still only 0.40, well short of closed) and has
@@ -61,8 +79,13 @@ class ReachGraspDemoController:
         self._close_a = None
         self._close_steps = 0
         self._commanded_closed_steps = 0
+        self._descend_steps = 0
+        self._descend_close_steps = 0
+        self._descend_q = None
 
     def _goal(self, ee_base, target_base):
+        """Task-space goal for phases still driven by per-step dls_step. Also owns every
+        phase transition, including descend's (which drives itself via _descend_q in act())."""
         if self.phase == "arc":
             phi_now = np.arctan2(ee_base[1], ee_base[0])
             phi_goal = np.arctan2(target_base[1], target_base[0])
@@ -81,10 +104,14 @@ class ReachGraspDemoController:
                 return goal
         if self.phase == "descend":
             grasp_goal = target_base + np.array([0.0, 0.0, self.grasp_height_m])
-            if np.linalg.norm(grasp_goal - ee_base) < self.close_dist_m:
+            self._descend_steps += 1
+            self._descend_close_steps = (
+                self._descend_close_steps + 1 if np.linalg.norm(grasp_goal - ee_base) < self.close_dist_m else 0
+            )
+            at_max_steps = self.descend_max_steps > 0 and self._descend_steps > self.descend_max_steps
+            settled = self._descend_close_steps > self.descend_settle_steps
+            if at_max_steps or settled:
                 self.phase = "close"
-            else:
-                return grasp_goal
         if self.phase == "close":
             self._close_steps += 1
             at_max_steps = self.close_max_steps > 0 and self._close_steps > self.close_max_steps
@@ -102,15 +129,29 @@ class ReachGraspDemoController:
         target_base = K._rot_z(K.BASE_YAW).T @ obs[spec.OBS_TARGET].astype(float)
         ee_base = K.world_to_base(obs[spec.OBS_EE_POS].astype(float))
 
+        phase_before = self.phase
         goal = self._goal(ee_base, target_base)
         action = np.zeros(spec.ACTION_DIM, dtype=np.float32)
-        # measured tool point drives the error; the calibrated model only supplies the Jacobian
-        model_ee = K.tool_point_base(q, grip)
-        goal_for_model = model_ee + (goal - ee_base)
-        dq = K.dls_step(q, goal_for_model, grip=grip, q_ref=HOME_Q, axis_target=self.axis_target,
-                        axis_gain=self.axis_gain, max_step=spec.MAX_JOINT_DELTA_RAD)
-        if self.yaw_gain > 0.0:
-            # fingers close along the flange y axis; a cube is only gripped cleanly with that axis parallel to a face
+
+        if self.phase == "descend":
+            if phase_before != "descend" or self._descend_q is None:
+                grasp_goal = target_base + np.array([0.0, 0.0, self.grasp_height_m])
+                self._descend_q = K.solve_ik(q, grasp_goal, grip=0.0, q_ref=HOME_Q,
+                                              axis_target=self.axis_target, axis_gain=self.axis_gain)
+            dq = np.clip(self._descend_q - q, -self.descend_max_joint_step, self.descend_max_joint_step)
+        else:
+            # measured tool point drives the error; the calibrated model only supplies the Jacobian
+            model_ee = K.tool_point_base(q, grip)
+            goal_for_model = model_ee + (goal - ee_base)
+            dq = K.dls_step(q, goal_for_model, grip=grip, q_ref=HOME_Q, axis_target=self.axis_target,
+                            axis_gain=self.axis_gain, max_step=spec.MAX_JOINT_DELTA_RAD)
+        if self.yaw_gain > 0.0 and self.phase != "descend":
+            # fingers close along the flange y axis; a cube is only gripped cleanly with that axis parallel to a face.
+            # Not applied during descend: _descend_q was solved with the same axis_target/axis_gain already folded
+            # in, so this would fight that joint-space tracking's own (already-aligned) wrist_3 command instead of
+            # complementing it -- confirmed live 2026-09-22 as the actual cause of the "solve-then-track" descend
+            # still oscillating exactly like the old continuous dls_step approach: this override completely replaces
+            # dq[5] every step with a correction based on the CURRENT orientation, not the target's.
             y_axis = K.forward_chain(q)[6][:3, 1]
             ang = np.arctan2(y_axis[1], y_axis[0])
             dq[5] = self.yaw_gain * (((ang + np.pi / 4) % (np.pi / 2)) - np.pi / 4)

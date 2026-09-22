@@ -4,10 +4,10 @@ Pure numpy, no Isaac Sim dependency, so it is unit-testable anywhere and is shar
 the training environment (collision proxies), the demonstration controller, and the
 real-robot safety filter.
 
-DH parameters are the Universal Robots published UR5e values. The base pose and the
-tool offset were fitted to the headline run's telemetry (joint angles vs. the logged
-world-frame finger-pad midpoint): median position error 3.7 mm, 95th percentile 2 cm.
-Treat the collision proxy as approximate: radii are hand-set capsules, not the meshes.
+DH parameters are the Universal Robots published UR5e values. The base pose was fitted to the
+headline run's telemetry (joint angles vs. the logged world-frame finger-pad midpoint): median
+position error 3.7 mm, 95th percentile 2 cm. Treat the collision proxy as approximate: radii are
+hand-set capsules, not the meshes.
 """
 import numpy as np
 
@@ -19,8 +19,18 @@ DH_ALPHA = np.array([np.pi / 2, 0.0, 0.0, np.pi / 2, -np.pi / 2, 0.0])
 # Fitted to telemetry (see analysis/fit_kinematics.py). World frame of the Isaac scene.
 BASE_POS_WORLD = np.array([0.0015, 0.5517, 0.7797])
 BASE_YAW = np.pi  # UR base_link is rotated 180 deg about z relative to the world frame
-TOOL_OFFSET = np.array([-0.0008, -0.0131, 0.1787])          # flange frame -> finger-pad midpoint, gripper open
-TOOL_OFFSET_PER_GRIP = np.array([0.0023, 0.0982, -0.0152])  # change per unit of finger_joint position
+# flange frame -> finger-pad midpoint. Re-measured directly against the running asset
+# 2026-09-22 (env._left_pad/_right_pad world poses, two different arm configs, converted into the
+# flange frame): the old values here were fitted against the headline run's telemetry, which had
+# the gripper's mimic-joint gearing sign bug (see ur5e_grasp_env.py's MIMIC_JOINT_MULTIPLIERS
+# comment) baked in, so TOOL_OFFSET_PER_GRIP pointed the pad-drift compensation in a nearly
+# opposite direction once that bug was fixed -- e.g. Z was -0.0152 (predicting the pad drops as
+# the gripper closes) when it actually rises by +0.0338 per unit of finger_joint position,
+# confirmed independently by an analytical forward-kinematics derivation from the gripper URDF's
+# own link origins (+0.0339/rad there). This was the direct cause of the demo controller's
+# approach converging ~2cm short of the target even with a numerically well-converged IK solve.
+TOOL_OFFSET = np.array([-0.0021, 0.0004, 0.1764])            # flange frame -> finger-pad midpoint, gripper open
+TOOL_OFFSET_PER_GRIP = np.array([0.0000, -0.0000, 0.0338])   # change per unit of finger_joint position
 
 # Capsule radii (m) for the collision proxy. Approximate on purpose.
 RADIUS_SHOULDER = 0.075
@@ -128,6 +138,31 @@ def dls_step(q, target_base, grip=0.0, damping=0.05, max_step=0.08, q_ref=None, 
         N = np.eye(6) - J_pinv @ J
         dq = dq + N @ (nullspace_gain * (np.asarray(q_ref, dtype=float) - q))
     return np.clip(dq, -max_step, max_step)
+
+
+def solve_ik(q0, target_base, grip=0.0, iters=200, tol=1e-4, **dls_kwargs):
+    """Converge dls_step offline (pure kinematics, no physics) to a fixed joint target.
+
+    The demo controller's earlier approach -- calling dls_step once per env.step() and
+    commanding that single small delta -- re-linearizes around the REAL, physically-evolving
+    joint state every step. Confirmed live 2026-09-22 that this does not actually converge for
+    the last few cm of the descend approach: it settles into a persistent ~2-3cm limit cycle
+    (reproduced with the axis-alignment task on and off, and with several max_step sizes, so it
+    is not simply overshoot from too large a step). A fixed target, computed once by iterating
+    this same solver purely in joint-angle space with no per-step re-linearization noise, then
+    tracked by the position-controlled arm, converges smoothly instead (confirmed live: the same
+    physical arm holds a fixed joint-angle target with no oscillation at all). dls_kwargs is
+    forwarded to dls_step (damping, q_ref, nullspace_gain, axis_target, axis_gain); max_step
+    defaults to an uncapped-in-practice value here since this never touches the real robot.
+    """
+    q = np.asarray(q0, dtype=float).copy()
+    dls_kwargs.setdefault("max_step", 0.2)
+    for _ in range(iters):
+        dq = dls_step(q, target_base, grip=grip, **dls_kwargs)
+        q = q + dq
+        if np.linalg.norm(dq) < tol:
+            break
+    return q
 
 # ----------------------------------------------------------------------------- collision proxy
 
