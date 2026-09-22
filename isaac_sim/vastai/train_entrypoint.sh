@@ -9,6 +9,11 @@
 #   NUM_ENVS=4 TOTAL_TIMESTEPS=200000 DEVICE=cuda ./vastai/train_entrypoint.sh
 set -euo pipefail
 
+# EULA acceptance is per-process, not cached to disk -- this is a separate script/process from
+# setup_vastai.sh, so it needs its own export or the first Isaac Sim boot hangs on an interactive
+# prompt with no stdin (confirmed live: setup_vastai.sh's own export does not carry over here).
+export OMNI_KIT_ACCEPT_EULA=YES
+
 NUM_ENVS="${NUM_ENVS:-8}"
 TOTAL_TIMESTEPS="${TOTAL_TIMESTEPS:-100000}"
 DEVICE="${DEVICE:-cuda}"

@@ -25,6 +25,11 @@
 # apt/sudo needed) rather than assuming a matching system Python exists.
 set -euo pipefail
 
+# EULA acceptance is per-process, not cached to disk after the first accept -- confirmed live:
+# even within this one setup run, every separate `python ...` invocation that boots a fresh Isaac
+# Sim kit needs this set, and train_entrypoint.sh (a different script/process) needs it again too.
+export OMNI_KIT_ACCEPT_EULA=YES
+
 echo "=== Sanity checks ==="
 ls /.dockerenv && echo "container confirmed"
 cat /etc/os-release
