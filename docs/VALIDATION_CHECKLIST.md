@@ -286,3 +286,44 @@ with checking whether the ~1.5-2cm descend-convergence residual documented above
 gap.
 
 **Honest status: still nothing trained, no held grasp achieved.**
+
+### Follow-up: `validate_collisions.py`'s self-collision/table checks fixed for real (2026-09-22, same session)
+
+The self-collision and table checks (rewritten earlier this session to drive at an
+analytically-verified colliding configuration instead of a vacuous single-joint sweep, see above)
+were still producing false results after that rewrite: the self-collision check gave a false
+**PASS** via a `gap > 0.3` fallback that treated "far from target" as "blocked," and after removing
+that fallback both checks correctly **FAILED** -- the arm wasn't actually reaching the target
+configurations within the 200-step budget.
+
+1. **Root cause, found via `scripts/trace_wrist1.py` (per-step joint trace) and
+   `scripts/check_wrist1_limits.py` (USD drive attribute dump), both new diagnostic scripts kept in
+   the repo:** wrist_1 and wrist_2's position drives import with `maxForce=28 N-m` (matching the
+   real UR5e's rated wrist torque from the URDF), versus `150 N-m` for shoulder_lift/elbow. At
+   extended poses this is not enough torque to fight gravity loading from the wrist_3/gripper mass,
+   so commanding a large wrist_1/wrist_2 swing while elbow is also moving made wrist_1 track the
+   **wrong direction** and plateau, regardless of which way the target actually was. This is a real
+   actuator-torque effect (consistent with the real robot's spec), not a simulation bug.
+
+2. **Self-collision target** (`self_target`, `validate_collisions.py`): re-picked restricted to
+   small shoulder_lift/wrist_1 motion, HOME_Q with `shoulder_lift=-1.8, elbow=2.9, wrist1=0.3,
+   wrist2=2.5` (analytical clearance -0.14). Confirmed live: genuinely overlaps
+   (`min_self_clearance=-0.017`) even though the final pose never fully converges
+   (`final-target gap=1.61 rad` after 200 steps) -- the trajectory passes through real overlap along
+   the way, which is all the check needs since it tracks the minimum clearance seen, not just the
+   final state.
+
+3. **Table target** (`table_target`): needed three re-picks before it worked, each confirmed live to
+   fail for a different reason -- see the inline comments in `validate_collisions.py` for the full
+   trail (a too-large shoulder_lift-only swing; a wrist_1-dependent config where wrist_1 failed to
+   track; a second wrist_1-dependent config where it failed to track in the *opposite* direction).
+   Landed on using only shoulder_lift/elbow (both proven reliable movers) with both wrists left at
+   HOME_Q: `shoulder_lift=0.461, elbow=0.8` (a target chosen to be within shoulder_lift's own
+   empirically-observed ~1.8 rad/200-step budget, since even that joint doesn't fully reach a more
+   ambitious target in time). This produces a genuine `Table Collision` termination
+   (`depth=0.022 m`), not just a proxy threshold crossing.
+
+**Result:** `validate_collisions.py` now reports **4/5 PASS** (contact source, hold-pose stability,
+self-collision, table), with the 5th (**demo grasp**) still failing honestly -- it is the same
+unresolved grasp-closing problem documented throughout this file, now also visible through the
+validation script's own summary line rather than only through ad hoc runs.

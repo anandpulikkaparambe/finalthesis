@@ -13,6 +13,7 @@ runs/
 eval_out/
 validate_telemetry/
 demo_telemetry/
+*_telemetry/
 *.npz
 rl_logs/
 # data logs are results, keep them
