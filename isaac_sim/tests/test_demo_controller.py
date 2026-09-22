@@ -38,10 +38,17 @@ def test_controller_reaches_random_targets_without_collision_proxy_violations():
         assert worst_table > -0.01   # the fingertip is allowed to touch the table next to the target
 
 
-def test_close_phase_commands_gripper_closed():
+def test_close_phase_ramps_gripper_closed():
+    # close_ramp paces the close command instead of snapping to it in one step (a fast close
+    # knocks a light target away -- see demo_controller.py's own comment), so this checks the
+    # ramp reaches and then holds spec.GRIPPER_ACTION_CLOSED, not that it gets there instantly.
     ctl = ReachGraspDemoController()
     ctl.phase = "close"
     target = np.array([0.802, 0.29, 0.79])
     q = HOME_Q.copy()
-    a = ctl.act(_obs(q, 0.0, target))
-    assert a[6] == spec.GRIPPER_ACTION_CLOSED and np.all(a[:6] == 0)
+    grip = 0.0
+    a = ctl.act(_obs(q, grip, target))
+    assert spec.GRIPPER_ACTION_OPEN < a[6] < spec.GRIPPER_ACTION_CLOSED
+    for _ in range(20):
+        a = ctl.act(_obs(q, grip, target))
+    assert a[6] == spec.GRIPPER_ACTION_CLOSED

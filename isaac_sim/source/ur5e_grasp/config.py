@@ -92,6 +92,7 @@ class EnvConfig:
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     self_collision: bool = True             # enable PhysX articulation self-collision
     filter_gripper_internal_pairs: bool = True
+    robot_gravity_compensated: bool = True  # no gravity on the robot links: a real UR holds its pose by itself, and joint targets here are current+delta, so any sag would compound
     max_episode_steps: int = 500
     sim_step_time: float = 0.1
     action_smoothing_alpha: float = 0.0     # 0 = off; else a_t = alpha*a_{t-1} + (1-alpha)*a_t

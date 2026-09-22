@@ -94,3 +94,98 @@ Run with the real physics backend, `no_randomization.json`. This is the first ti
 ### Update: real 2F-140 collision meshes (2026-09-22)
 
 The repo already contains the real Robotiq 2F-140 collision STLs (`assets/meshes/.../collision/`). The Gazebo description swaps them for 1 cm boxes; `patch_urdf.py` now puts the meshes back (8 links; `--gripper-box-collision` restores the old behaviour). Regenerate the USD after patching. Result on local Isaac Sim 5.1: 3/5 checks pass. Hold-pose now passes (1.13 rad/s) and the table check genuinely triggers a table-collision termination. The demo grasp still fails (0/5): with the meshes the finger joint stalls at about 0.15-0.25 rad instead of closing to 0.7, so the pads never reach the cube. Follower-joint gains make no difference; a lower finger-joint damping only speeds the approach to the same plateau. This looks like a mimic-joint / closed-linkage problem in the URDF-imported gripper rather than a controller problem. The next candidate is NVIDIA's own tuned Robotiq 2F-140 USD, which is not on this machine (it is fetched from NVIDIA's asset server).
+
+### Attempted: NVIDIA Robotiq 2F-140 asset (2026-09-22) -- unresolved, abandoned for now
+
+`assets/fetch_robotiq_2f140.py` downloads two NVIDIA-authored Robotiq 2F-140 USDs. Both were tried
+as a drop-in replacement for the URDF-converted gripper's geometry, mounted onto the arm via a
+synthetic fixed joint (`assets/build_nvidia_gripper_usd.py`, still in the repo since the diagnostic
+work is worth keeping, but **not currently wired into the default asset path**):
+
+1. `Robotiq_2F_140_physics_edit.usd` -- a real closed four-bar linkage with PhysX loop-closure
+   joints (`excludeFromArticulation=True` on two of them), built as its own articulation. Grafting
+   that loop-closure structure onto the arm's articulation left the linkage unstable: the fingers
+   settled into a bent, left/right-asymmetric shape, reproducible even with self-collision and the
+   contact sensor both off.
+2. `2f140_instanceable.usd` -- a plain open tree, 6 independently-driven revolute joints, no loop
+   closure, same link/joint names as the URDF gripper. A PhysX mimic constraint on its follower
+   joints diverged even worse (finger_joint reaching hundreds of rad within 25 steps) once part of
+   the arm's articulation, so the followers were switched to direct per-step position-target
+   driving in `ur5e_grasp_env.py` (proven correct and stable in an unmounted, standalone test:
+   gearing +1/+1/-1 relative to finger_joint converges the pads to 1.1cm apart and holds). Mounted
+   onto the arm, **the whole arm diverges during reset's own settle steps**, before any policy
+   action -- e.g. shoulder_pan_joint reaching -8 rad. This is not a gripper-linkage problem: it
+   reproduces with the gripper's own internal joints entirely deactivated, mounting only its single
+   base-link rigid body.
+
+   Ruled out, each confirmed not to change the divergence (same trajectory to the decimal across
+   most of these, which is itself a clue no one of them was the real cause): self-collision on and
+   off; the asset's `UsdPhysics:MassAPI:principalAxes` shipping as an invalid all-zero quaternion
+   on every body (fixed by overriding to identity -- confirmed the override lands in the file, no
+   change in behaviour); the asset's `visuals`/`collisions` child scopes shipping
+   `instanceable=True` the same way this repo's own arm-collider-wiring code once hit for the arm
+   (fixed with the same `SetInstanceable(False)` pattern -- no change); the composed stage's own
+   `metersPerUnit`/`upAxis` defaulting away from the source file's 1.0/Z-up when `Usd.Stage.CreateNew()`
+   doesn't inherit sublayer metadata (fixed -- no change, because `World(stage_units_in_meters=1.0)`
+   already forces the live stage's units before this file is only *referenced* in, not opened
+   directly); a duplicated `ArticulationRootAPI` inside the referenced subtree (checked directly in
+   the built file -- was already correctly removed); the mount joint's own frames/values (checked
+   byte-for-byte identical to the URDF's own working `ur_to_gripper` joint); the placement matrix
+   carrying spurious scale/shear from the transform-inversion chain (checked -- proper orthogonal
+   rotation, determinant 1).
+
+   Not yet tried: the reference chain here is unusually deep (arm's own multi-file reference chain,
+   plus a new reference to `2f140_instanceable.usd`, which itself references
+   `Collected_2f140_instanceable/Props/instanceable_meshes.usd`) -- worth checking whether
+   `Usd.Stage.Flatten()`-ing the gripper source (or the whole composed file) before referencing it
+   in changes anything, which would point at a PhysX/USD composition depth issue rather than
+   anything about this specific asset's authoring.
+
+**Decision:** given the time already spent without a root cause, this path is parked. The mesh-
+collision-swapped URDF gripper below (`patch_urdf.py`'s real Robotiq STL collision meshes, no
+NVIDIA asset needed) is stable and already passes 3/5 checks; effort went there instead.
+
+### Follow-up: follower joint limits were wrong, fixed; a real geometry gap remains (2026-09-22)
+
+Root-caused the demo grasp's earlier "0/5, 0 N" failure (both with box and real-mesh collision --
+this turned out to have nothing to do with which one is used, see below): the five gripper
+follower joints' *imported* limits do not match the URDF's own authored values. The URDF gives
+`left_inner_knuckle_joint` a symmetric `+-0.8757` rad limit; Isaac Sim's URDF importer reads it
+back as `[-0.84, 0.14]` rad -- an asymmetric, far narrower window. Once `finger_joint` closes past
+the point where a follower needs to exceed `+0.14`, that follower hard-stops at its own (wrong)
+limit while the mimic constraint keeps trying to enforce `follower = gearing * finger_joint`,
+which it now can't -- the two fight, and the whole mechanism stalls around `finger_joint~0.47`
+instead of reaching its own real limit of `0.70`, with zero contact force (nothing to do with a
+real collision; reproduces identically with `self_collision=False`). Fixed in
+`ur5e_grasp_env.py`'s existing mimic-gearing-fix loop: the same block now also widens these five
+joints' `physics:lowerLimit`/`physics:upperLimit` to `+-60` degrees (USD revolute joint limits are
+authored in degrees, not radians -- confirmed by reading the wrong values back and converting).
+`finger_joint` now reaches its own full `0.70` rad and holds there cleanly.
+
+That fix is real and worth keeping (hold-pose stability improved to 0.02 rad/s peak, from 1.13),
+but it did **not** close the actual gap: even at `finger_joint = 0.70` (the joint's own authored
+maximum, matching the URDF exactly), the two finger pads are **8.5cm apart, center to center** --
+confirmed identical (to four decimal places) whether the box-collision or the real-mesh-collision
+asset is used, which rules out collision geometry as the cause: pad separation is pure kinematics
+(rigid-body poses driven by joint angles), not something a collision *shape* choice can move.
+Scanning the commanded angle from 0.1 to 0.7 rad shows separation decreasing monotonically the
+whole way (12.7cm to 8.5cm) with no sign of the linear `gearing=-1/+1` mimic approximation
+"passing through" a true minimum and reopening -- it simply never gets close enough. This is very
+likely a genuine calibration gap in the *source* Gazebo URDF's mimic joints themselves (a linear
+approximation of what a real Robotiq four-bar closure needs is not exact, and apparently not close
+enough here), not something introduced this session -- it was never visible before because the
+thesis' headline run measured "success" from the commanded-vs-achieved finger-gap proxy, not real
+pad geometry.
+
+**Not yet tried:** hand-tuning the mimic gearing to something other than exactly +-1 (the real
+four-bar relationship between finger_joint and each follower is not linear, so some other constant
+-- or a full nonlinear correction -- may track the true kinematics far better very close to full
+closure, which is exactly the regime that matters for grasping); checking whether the URDF's own
+`left_inner_finger_pad_joint`/`right_inner_finger_pad_joint` fixed-offset values are themselves
+correct; comparing against the original Gazebo project's own (ROS-side) kinematic behaviour if
+that's still inspectable, to see whether Gazebo's mimic plugin used the same linear approximation
+or something closer to the real linkage.
+
+**Honest status:** nothing has been trained. No config in this repo has a demonstrated, real-PhysX
+grasp on the 2cm target -- the closest state reached is full, stable finger closure with the pads
+8.5cm apart, well short of touching a 2cm cube.

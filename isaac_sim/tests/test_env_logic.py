@@ -135,6 +135,8 @@ def make_env(tmp_path, cfg=None, seed=0):
     env._left_pad, env._right_pad, env._base_link, env._lego = FakePad(env._robot), FakePad(env._robot), FakeBase(), FakeLego()
     env._arm_dof_indices = np.arange(6)
     env._gripper_dof_index = 6
+    env._nv_gripper = False  # fake backend always exercises the URDF-gripper (non-NV) code path
+    env._nv_follower_dof = {}
     env.max_joint_delta_rad = spec.MAX_JOINT_DELTA_RAD
     m = 0.05
     env.joint_pos_min = np.array([-2 * np.pi] * 2 + [-np.pi] + [-2 * np.pi] * 3, dtype=np.float32) + m

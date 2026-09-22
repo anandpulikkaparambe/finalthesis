@@ -117,6 +117,31 @@ LEFT_PAD_LINK = "left_inner_finger_pad"
 RIGHT_PAD_LINK = "right_inner_finger_pad"
 BASE_LINK = "base_link"
 
+# NVIDIA Robotiq 2F-140 USD (assets/build_nvidia_gripper_usd.py). Detected from the stage: a prim
+# named nv_gripper under the robot means the gripper's geometry comes from NVIDIA's asset
+# (2f140_instanceable.usd) instead of the URDF-converted one -- but it's mounted under the SAME
+# link/joint names (robotiq_arg2f_base_link, left_inner_finger_pad, ...) and gets the same
+# PhysxMimicJointAPI gearing fix (see MIMIC_JOINT_MULTIPLIERS below), so it needs no separate
+# pad-link names, tool-point offset or grasp-height hack -- only a wider self-collision filter
+# group, since its collision meshes are closer to the wrist than the box proxies were.
+NV_GRIPPER_PRIM = "nv_gripper"
+NV_ARM_LINKS_NEAR_GRIPPER = ("wrist_3_link", "flange", "tool0", "ft_frame")
+NV_FINGER_KP = float(os.environ.get("NV_FINGER_KP", "800.0"))
+NV_FINGER_KD = float(os.environ.get("NV_FINGER_KD", "80.0"))
+# This asset ships each follower as an independent, undriven revolute joint -- no mimic
+# constraint, no loop closure (unlike the URDF-imported gripper). A PhysX mimic constraint on
+# them diverges once folded into the arm's articulation (confirmed live 2026-09-22: finger_joint
+# alone reached 232 rad within 25 steps), so they are driven directly here instead, every step,
+# to gearing * finger_joint's own target -- same signs as MIMIC_JOINT_MULTIPLIERS below,
+# confirmed empirically in a standalone test (pads converge to 1.1cm apart and hold; the other
+# inner-finger sign only reaches 3.5cm). left/right_inner_knuckle_joint are left undriven --
+# dead-end decorative links, confirmed to have zero effect on pad separation.
+NV_FOLLOWER_JOINTS = {
+    "right_outer_knuckle_joint": -1.0,
+    "left_inner_finger_joint": 1.0,
+    "right_inner_finger_joint": 1.0,
+}
+
 # The Robotiq gripper's 5 follower joints are driven purely by a PhysX mimic constraint
 # relative to finger_joint (the URDF's own <mimic joint="finger_joint" multiplier="..."/>
 # tags -- there's no independent drive on them, matching the original Gazebo setup where
@@ -294,6 +319,7 @@ class Ur5eGraspEnv(gym.Env):
         # the stage for whichever prim actually has ArticulationRootAPI applied, and find
         # the finger pad links by name, wherever they ended up nested.
         ur5e_root_prim = stage.GetPrimAtPath("/World/UR5e")
+        self._nv_gripper = stage.GetPrimAtPath(f"/World/UR5e/{NV_GRIPPER_PRIM}").IsValid()
         articulation_root_path = None
         left_pad_path = None
         right_pad_path = None
@@ -309,7 +335,7 @@ class Ur5eGraspEnv(gym.Env):
                 right_pad_path = prim.GetPath().pathString
             elif name == BASE_LINK and base_link_path is None:
                 base_link_path = prim.GetPath().pathString
-            elif name in MIMIC_JOINT_MULTIPLIERS and name not in mimic_joint_prims:
+            elif not self._nv_gripper and name in MIMIC_JOINT_MULTIPLIERS and name not in mimic_joint_prims:
                 mimic_joint_prims[name] = prim
         if articulation_root_path is None:
             raise RuntimeError(
@@ -324,18 +350,35 @@ class Ur5eGraspEnv(gym.Env):
             )
         if base_link_path is None:
             raise RuntimeError(f"Could not find {BASE_LINK} under /World/UR5e.")
-        if len(mimic_joint_prims) != len(MIMIC_JOINT_MULTIPLIERS):
+        if not self._nv_gripper and len(mimic_joint_prims) != len(MIMIC_JOINT_MULTIPLIERS):
             missing = set(MIMIC_JOINT_MULTIPLIERS) - set(mimic_joint_prims)
             raise RuntimeError(f"Could not find gripper mimic joints under /World/UR5e: missing {missing}.")
 
-        # Fix the importer's inverted mimic gearing sign -- see MIMIC_JOINT_MULTIPLIERS'
-        # comment above. Must happen before self._world.reset() so physics never runs even
-        # one step with the wrong sign.
-        for jname, expected_gearing in MIMIC_JOINT_MULTIPLIERS.items():
+        # Fix the importer's inverted mimic gearing sign -- see MIMIC_JOINT_MULTIPLIERS' comment
+        # above. Must happen before self._world.reset() so physics never runs even one step with
+        # the wrong sign. Not used for the NV gripper -- see NV_FOLLOWER_JOINTS' comment: a PhysX
+        # mimic constraint on that asset's joints diverges once composed into this articulation,
+        # so its followers are driven directly in software instead (step()/reset() below).
+        for jname, expected_gearing in ({} if self._nv_gripper else MIMIC_JOINT_MULTIPLIERS).items():
             gearing_attr = mimic_joint_prims[jname].GetAttribute("physxMimicJoint:rotX:gearing")
             if not gearing_attr:
                 raise RuntimeError(f"{jname} has no physxMimicJoint:rotX:gearing attribute to fix.")
             gearing_attr.Set(expected_gearing)
+            # The importer's OWN limits on these 5 follower joints don't match what the URDF itself
+            # authors (confirmed live 2026-09-22: left_inner_knuckle_joint imports as
+            # [-0.84, 0.14] rad, not the URDF's own symmetric +-0.8757) and are far too narrow for
+            # finger_joint's full [0, 0.70] range once scaled by the mimic gearing -- the follower
+            # hits this wrong limit and hard-stops the whole mimic-coupled mechanism at
+            # finger_joint~0.47 rad, well short of a real grasp closure, with zero contact force
+            # (ruled out as a collision problem: reproduces identically with self_collision=False).
+            # Widen to a safe bound the mimic constraint should never actually reach. USD revolute
+            # joint limits are authored in DEGREES, not radians (confirmed live: the buggy import
+            # read back as [-48.13, 8.02] degrees == [-0.84, 0.14] rad) -- not converting this would
+            # have made things far worse, not better.
+            for limit_name, value in (("physics:lowerLimit", -60.0), ("physics:upperLimit", 60.0)):
+                limit_attr = mimic_joint_prims[jname].GetAttribute(limit_name)
+                if limit_attr:
+                    limit_attr.Set(value)
 
         # The URDF importer generates real per-link collision geometry (STL-derived convex
         # meshes for the arm, simple Cube proxies for the gripper) into a "/colliders/{link}"
@@ -374,6 +417,8 @@ class Ur5eGraspEnv(gym.Env):
         for prim in Usd.PrimRange(ur5e_root_prim):
             name = prim.GetName()
             if name in collider_link_names and name not in link_prims_by_name:
+                if self._nv_gripper and name in GRIPPER_LINKS:
+                    continue  # the NVIDIA asset carries its own collision geometry
                 link_prims_by_name[name] = prim
         wired_count = 0
         for link_name, link_prim in link_prims_by_name.items():
@@ -417,9 +462,21 @@ class Ur5eGraspEnv(gym.Env):
         else:
             physx_art_api = PhysxSchema.PhysxArticulationAPI.Apply(art_root_prim)
         physx_art_api.CreateEnabledSelfCollisionsAttr().Set(bool(self.cfg.self_collision))
+        if self.cfg.robot_gravity_compensated:
+            for _body in Usd.PrimRange(ur5e_root_prim):
+                if _body.HasAPI(UsdPhysics.RigidBodyAPI):
+                    PhysxSchema.PhysxRigidBodyAPI.Apply(_body).CreateDisableGravityAttr().Set(True)
         n_filtered = 0
         if self.cfg.self_collision and self.cfg.filter_gripper_internal_pairs:
-            n_filtered = self._filter_gripper_internal_pairs(link_prims_by_name)
+            if self._nv_gripper:
+                nv_root = stage.GetPrimAtPath(f"/World/UR5e/{NV_GRIPPER_PRIM}")
+                group = {c.GetName(): c for c in nv_root.GetChildren() if c.HasAPI(UsdPhysics.RigidBodyAPI)}
+                for arm_name in NV_ARM_LINKS_NEAR_GRIPPER:
+                    if arm_name in link_prims_by_name:
+                        group[arm_name] = link_prims_by_name[arm_name]
+                n_filtered = self._filter_gripper_internal_pairs(group, names=tuple(group))
+            else:
+                n_filtered = self._filter_gripper_internal_pairs(link_prims_by_name)
         print(f"DEBUG self_collision={self.cfg.self_collision} filtered_gripper_pairs={n_filtered}", flush=True)
 
         # Table model is centered at world (0, 0) in the Gazebo world file (its own link
@@ -491,6 +548,10 @@ class Ur5eGraspEnv(gym.Env):
             [self._robot.dof_names.index(n) for n in ARM_JOINT_NAMES], dtype=np.int64
         )
         self._gripper_dof_index = self._robot.dof_names.index(GRIPPER_DRIVE_JOINT)
+        self._nv_follower_dof = (
+            {self._robot.dof_names.index(n): g for n, g in NV_FOLLOWER_JOINTS.items()}
+            if self._nv_gripper else {}
+        )
 
         # Explicit PD gains for the implicit joint drives -- Isaac Sim 6.0.1.0's URDF
         # importer does NOT set these from the source URDF (confirmed live 2026-09-10:
@@ -519,10 +580,7 @@ class Ur5eGraspEnv(gym.Env):
         # never actually fixed that, since it doesn't apply to mimic-constrained joints. See
         # the gearing-sign correction, dampingRatio fix, and iteration-count raise below,
         # which do fix it.
-        self._robot.set_gains(
-            kps=np.full((1, self._robot.num_dof), 50.0, dtype=np.float32),
-            kds=np.full((1, self._robot.num_dof), 5.0, dtype=np.float32),
-        )
+        self._apply_drive_gains()
         # Solver iteration counts: confirmed live 2026-09-10 that with only the importer's
         # own defaults, joint velocities grow gradually over ~10-15 steps even holding a
         # fixed target with zero policy action (a classic PD/TGS-solver-iteration-count
@@ -551,16 +609,9 @@ class Ur5eGraspEnv(gym.Env):
         # a problem, the first thing worth trying is a value between 32 and 255, re-tested
         # the same way (watch max|mimic joint velocity| over the first ~150 steps of a
         # fresh env), not assuming a lower number is safe without checking.
-        self._robot.set_solver_position_iteration_counts(np.array([255]))
-        self._robot.set_solver_velocity_iteration_counts(np.array([64]))
-        self._robot.set_gains(
-            kps=np.array([[400.0] * 6], dtype=np.float32), kds=np.array([[40.0] * 6], dtype=np.float32),
-            joint_indices=self._arm_dof_indices,
-        )
-        self._robot.set_gains(
-            kps=np.array([[800.0]], dtype=np.float32), kds=np.array([[80.0]], dtype=np.float32),
-            joint_indices=[self._gripper_dof_index],
-        )
+        self._robot.set_solver_position_iteration_counts(np.array([int(os.environ.get("DBG_POS_ITERS", "255"))]))
+        self._robot.set_solver_velocity_iteration_counts(np.array([int(os.environ.get("DBG_VEL_ITERS", "64"))]))
+        # (arm and gripper PD gains are applied by _apply_drive_gains(), called above and after every world.reset())
         # The gripper mimic joints' dampingRatio imports at ~0.005 (near-undamped) -- not
         # something the URDF's <mimic> tag even specifies, purely an importer default, and
         # far too low for a real mechanical linkage. Confirmed live 2026-09-10 as part of
@@ -568,7 +619,7 @@ class Ur5eGraspEnv(gym.Env):
         # critically-damped 1.0 (alongside the gearing fix and the iteration-count raise
         # above -- none of the three alone was sufficient) is what actually gets the gripper
         # to converge instead of oscillating or diverging.
-        for _jname in MIMIC_JOINT_MULTIPLIERS:
+        for _jname in ({} if self._nv_gripper else MIMIC_JOINT_MULTIPLIERS):
             damping_attr = mimic_joint_prims[_jname].GetAttribute("physxMimicJoint:rotX:dampingRatio")
             damping_attr.Set(1.0)
 
@@ -643,7 +694,31 @@ class Ur5eGraspEnv(gym.Env):
             self._warned.add(key)
             print(f"[Ur5eGraspEnv {self.env_id}] WARNING: {message}", flush=True)
 
-    def _filter_gripper_internal_pairs(self, link_prims_by_name):
+    def _apply_drive_gains(self):
+        """PD gains for every joint drive.
+
+        world.reset() puts the drives back to the USD defaults (found 2026-09-22: after reset the arm
+        ran at kp 35810 / kd 0 and the finger at kp 6.4), so this runs once at construction and again
+        after every reset.
+        """
+        if not self._nv_gripper:  # the NVIDIA asset leaves its passive linkage joints undriven
+            self._robot.set_gains(
+                kps=np.full((1, self._robot.num_dof), 50.0, dtype=np.float32),
+                kds=np.full((1, self._robot.num_dof), 5.0, dtype=np.float32),
+            )
+        self._robot.set_gains(
+            kps=np.array([[400.0] * 6], dtype=np.float32), kds=np.array([[40.0] * 6], dtype=np.float32),
+            joint_indices=self._arm_dof_indices,
+        )
+        finger_kp, finger_kd = (NV_FINGER_KP, NV_FINGER_KD) if self._nv_gripper else (800.0, 80.0)
+        gripper_indices = [self._gripper_dof_index] + list(self._nv_follower_dof)
+        self._robot.set_gains(
+            kps=np.array([[finger_kp] * len(gripper_indices)], dtype=np.float32),
+            kds=np.array([[finger_kd] * len(gripper_indices)], dtype=np.float32),
+            joint_indices=gripper_indices,
+        )
+
+    def _filter_gripper_internal_pairs(self, link_prims_by_name, names=None):
         """Filter collisions between every pair of gripper links (UsdPhysics.FilteredPairsAPI).
 
         With articulation self-collision on, PhysX only skips directly jointed links. The
@@ -652,7 +727,7 @@ class Ur5eGraspEnv(gym.Env):
         """
         from pxr import UsdPhysics
 
-        prims = [link_prims_by_name[n] for n in GRIPPER_LINKS if n in link_prims_by_name]
+        prims = [link_prims_by_name[n] for n in (names or GRIPPER_LINKS) if n in link_prims_by_name]
         count = 0
         for a in prims:
             api = UsdPhysics.FilteredPairsAPI.Apply(a)
@@ -776,6 +851,7 @@ class Ur5eGraspEnv(gym.Env):
         # -- confirmed live via an unchanged wired_count after calling it mid-episode
         # -- so this only resets physics state, not the scene construction.
         self._world.reset()
+        self._apply_drive_gains()
 
         episode_rand = self._randomizer.reset_episode(self.curriculum_level)
         self._prev_action = spec.neutral_action()
@@ -785,6 +861,11 @@ class Ur5eGraspEnv(gym.Env):
         ).astype(np.float32)
         self._robot.set_joint_positions(np.array([start_q], dtype=np.float32), joint_indices=self._arm_dof_indices)
         self._robot.set_joint_positions(np.array([[0.0]], dtype=np.float32), joint_indices=[self._gripper_dof_index])
+        if self._nv_follower_dof:
+            self._robot.set_joint_positions(
+                np.zeros((1, len(self._nv_follower_dof)), dtype=np.float32),
+                joint_indices=list(self._nv_follower_dof),
+            )
         self._robot.set_joint_velocities(np.zeros((1, self._robot.num_dof), dtype=np.float32))
 
         self.current_spawn_radius_m = (
@@ -847,6 +928,12 @@ class Ur5eGraspEnv(gym.Env):
         self._robot.set_joint_position_targets(
             np.array([[gripper_cmd_val]], dtype=np.float32), joint_indices=[self._gripper_dof_index]
         )
+        if self._nv_follower_dof:  # NV_FOLLOWER_JOINTS -- no mimic constraint, drive directly
+            follower_indices = list(self._nv_follower_dof)
+            follower_targets = [gearing * gripper_cmd_val for gearing in self._nv_follower_dof.values()]
+            self._robot.set_joint_position_targets(
+                np.array([follower_targets], dtype=np.float32), joint_indices=follower_indices
+            )
 
         for _ in range(self._substeps_per_step):
             self._world.step(render=False)
