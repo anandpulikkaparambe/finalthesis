@@ -47,6 +47,26 @@ def test_joint_limit_penalty():
     assert edge < mid
 
 
+def test_contact_reward_uses_weaker_pad_not_sum():
+    # min(), not sum/either -- a single pad touching just slides a light target along that one
+    # pad without trapping it (confirmed live, demo_controller.py's own act() comment), so only
+    # BOTH pads engaged should earn anything.
+    cfg = RewardConfig(contact_coef=0.1, contact_confirm_force_n=0.5)
+    one_pad, _ = dense_reward(_q(prev_dist=1.0, dist=1.0, contact_force_l=5.0, contact_force_r=0.0), cfg)
+    both_pads, _ = dense_reward(_q(prev_dist=1.0, dist=1.0, contact_force_l=0.5, contact_force_r=0.5), cfg)
+    assert np.isclose(one_pad, 0.0)
+    assert np.isclose(both_pads, 0.1)
+
+
+def test_contact_reward_clips_past_confirm_threshold():
+    # no incentive to squeeze harder once both pads are past the confirm threshold -- confirmed
+    # live that extra squeeze on this light, low-friction target increases displacement, not grip.
+    cfg = RewardConfig(contact_coef=0.1, contact_confirm_force_n=0.5)
+    at_threshold, _ = dense_reward(_q(prev_dist=1.0, dist=1.0, contact_force_l=0.5, contact_force_r=0.5), cfg)
+    way_past, _ = dense_reward(_q(prev_dist=1.0, dist=1.0, contact_force_l=50.0, contact_force_r=50.0), cfg)
+    assert np.isclose(at_threshold, way_past) and np.isclose(at_threshold, 0.1)
+
+
 def test_floor_clamps_episode_sum():
     r, s = apply_floor(-3.0, -4.0, -5.0)
     assert s == -5.0 and np.isclose(r, -1.0)

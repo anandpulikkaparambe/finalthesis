@@ -29,6 +29,15 @@ class RewardConfig:
     table_collision_depth_m: float = 0.03  # arm-table proxy penetration that terminates (headline poses overlapped by at most 2.6 cm)
     max_standoff_m: float = 0.30           # scales the table-collision penalty, as in the original env
     align_coef: float = 0.0               # optional approach-axis alignment term (off by default)
+    # Dense reward for both-pad contact force (min of the two pads, clipped to
+    # contact_confirm_force_n) -- added 2026-09-22 after a 600k-step run with only approach/align
+    # shaping converged to zero grasp successes; see reward.py's dense_reward() for the reasoning.
+    # 0.1 is deliberately modest next to the ~0.002-0.02 m/step distance shaping (self_collision_
+    # soft_coef's own comment gives that scale) so it nudges rather than dominates -- a coefficient
+    # large enough to reward loitering in light contact over actually completing hold+lift would
+    # just trade one exploration failure mode for another.
+    contact_coef: float = 0.1
+    contact_confirm_force_n: float = 0.5  # normalization point; matches ContactConfig.min_pad_force_n by default
     success_bonus: float = 15.0
     false_grasp_penalty: float = -5.0
     kill_switch_penalty: float = -5.0

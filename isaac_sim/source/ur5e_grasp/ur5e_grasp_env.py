@@ -215,6 +215,7 @@ class Ur5eGraspEnv(gym.Env):
         log_dir: str = "./rl_logs",
         config: EnvConfig = None,
         seed: int = 0,
+        num_envs: int = 1,
     ):
         super().__init__()
         self.env_id = env_id
@@ -229,7 +230,18 @@ class Ur5eGraspEnv(gym.Env):
         # applies equally to SimulationApp.
         from isaacsim import SimulationApp
 
-        self._simulation_app = SimulationApp({"headless": headless})
+        # SimulationApp's own default (limit_cpu_threads=32) is per-PROCESS and has no idea how
+        # many sibling Isaac Sim processes (one per SubprocVecEnv worker) will run alongside it on
+        # the same box -- confirmed live 2026-09-22 on a Vast.ai instance with 16 effective vCPUs
+        # and NUM_ENVS=4: each of the 4 processes independently requested up to 32 threads (128
+        # total against 16 real cores, ~8x oversubscribed), and per-env throughput was *lower*
+        # than a single env on a much weaker GPU (6.25 fps/env on an RTX 4090 vs ~7-10 fps on a
+        # laptop RTX 3050), pointing at thread-contention overhead rather than a GPU compute
+        # limit. Dividing the host's core count by num_envs gives each process a slice sized for
+        # how many will actually run concurrently; num_envs=1 (every other script -- smoke_test,
+        # validate_collisions, evaluate, collect_demos) keeps the SDK's own default behavior.
+        limit_cpu_threads = max(1, (os.cpu_count() or 32) // max(1, int(num_envs)))
+        self._simulation_app = SimulationApp({"headless": headless, "limit_cpu_threads": limit_cpu_threads})
 
         # Deferred imports: these modules touch omni/isaacsim internals that only exist
         # once SimulationApp has run.
@@ -1012,27 +1024,32 @@ class Ur5eGraspEnv(gym.Env):
             if n > 1e-6:
                 align_cos = float(np.dot(K.tool_axis_base(q_arm), to_target / n))
 
-        q = StepQuantities(
-            prev_dist=self._prev_dist, dist=dist, joint_vel=joint_vel.astype(float), joint_pos=q_arm,
-            joint_pos_min=self.joint_pos_min.astype(float), joint_pos_max=self.joint_pos_max.astype(float),
-            efforts=self._read_efforts(), dt=self.sim_step_time, self_clearance=self_clear,
-            table_clearance=arm_table_clear, align_cos=align_cos,
-        )
-        reward, _terms = dense_reward(q, cfg.reward)
-        self._prev_dist = dist
-        reward, self.episode_shaping_sum = apply_floor(reward, self.episode_shaping_sum, cfg.reward.shaping_floor)
-
         gripper_closed_amount = spec.gripper_closed_amount(gripper_val)
-        closed = gripper_closed_amount > 0.5
-        dist_ok = dist < cfg.reward.success_distance_m
 
-        # Grasp confirmation: contact on both pads held over several steps, not the finger-gap proxy.
+        # Read contact forces before dense_reward() so its contact shaping term can use them --
+        # real N values in sensor mode, 0.0 in gap_proxy mode (that path never gets the new term).
         force_l = force_r = 0.0
         if self._contact_source == "sensor":
             force_l, force_r = self._contact_sensor.read()
             contact_both = pads_in_contact(force_l, force_r, cfg.contact)
         else:
             contact_both = gap_proxy_contact(gripper_cmd_val, achieved_gripper_pos, gripper_closed_amount, cfg.contact)
+
+        q = StepQuantities(
+            prev_dist=self._prev_dist, dist=dist, joint_vel=joint_vel.astype(float), joint_pos=q_arm,
+            joint_pos_min=self.joint_pos_min.astype(float), joint_pos_max=self.joint_pos_max.astype(float),
+            efforts=self._read_efforts(), dt=self.sim_step_time, self_clearance=self_clear,
+            table_clearance=arm_table_clear, align_cos=align_cos,
+            contact_force_l=float(force_l), contact_force_r=float(force_r),
+        )
+        reward, _terms = dense_reward(q, cfg.reward)
+        self._prev_dist = dist
+        reward, self.episode_shaping_sum = apply_floor(reward, self.episode_shaping_sum, cfg.reward.shaping_floor)
+
+        closed = gripper_closed_amount > 0.5
+        dist_ok = dist < cfg.reward.success_distance_m
+
+        # Grasp confirmation: contact on both pads held over several steps, not the finger-gap proxy.
         target_height = float(self._lego.get_world_pose()[0][2])
         grasp_confirmed = self._hold.update(contact_both, dist_ok, closed, target_height)
         self._closed_near_count = self._closed_near_count + 1 if (dist_ok and closed) else 0

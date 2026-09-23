@@ -25,6 +25,8 @@ class StepQuantities:
     self_clearance: float = np.inf        # m, negative = overlap (proxy)
     table_clearance: float = np.inf       # m, negative = below the table plane (proxy)
     align_cos: float = 1.0                # cos of the angle between approach axis and direction to target
+    contact_force_l: float = 0.0          # N, left finger pad against the target (0 in gap_proxy mode)
+    contact_force_r: float = 0.0          # N, right finger pad against the target (0 in gap_proxy mode)
 
 
 def dense_reward(q: StepQuantities, cfg: RewardConfig):
@@ -48,9 +50,26 @@ def dense_reward(q: StepQuantities, cfg: RewardConfig):
 
     align = cfg.align_coef * (q.align_cos - 1.0)  # 0 when aligned, negative otherwise
 
+    # Dense signal for the grasp sub-task itself, missing until now: every other term above
+    # rewards approach (get close, stay aligned) but nothing rewards progress towards the actual
+    # grasp, which only ever showed up as the sparse +success_bonus/-false_grasp_penalty pair. A
+    # 600k-step SAC run (2026-09-22, Vast.ai, this reward function) converged on "get close and
+    # stay aligned" with zero grasp successes across 1388 episodes -- and its own automatic
+    # entropy coefficient collapsed ~700x over the run (0.95 -> 0.0013), so whatever exploration
+    # noise might have stumbled into the narrow contact window early on had all but vanished by
+    # the second half of training. Reward the WEAKER of the two pad forces (not the sum/either),
+    # since a single pad touching just slides a light target along that one pad without trapping
+    # it (confirmed live earlier this session, demo_controller.py's own act() comment) -- min()
+    # is zero unless both pads are genuinely engaged. Clipped to contact_confirm_force_n so
+    # there's no incentive to squeeze harder than the confirm threshold once both pads are
+    # touching (confirmed live: extra squeeze on this light, low-friction target reliably
+    # increases displacement rather than building real grip force, not shrinks it).
+    min_pad_force = min(q.contact_force_l, q.contact_force_r)
+    contact = cfg.contact_coef * float(np.clip(min_pad_force / max(cfg.contact_confirm_force_n, 1e-6), 0.0, 1.0))
+
     terms = {
         "shaping": shaping, "velocity": -velocity, "energy": -energy, "joint_limit": -limit,
-        "self_soft": -self_pen, "table_soft": -table_pen, "align": align,
+        "self_soft": -self_pen, "table_soft": -table_pen, "align": align, "contact": contact,
     }
     return float(sum(terms.values())), terms
 

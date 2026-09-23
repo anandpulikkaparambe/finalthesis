@@ -63,7 +63,10 @@ def main():
 
     def _make_env(env_id):
         def _init():
-            return Ur5eGraspEnv(env_id=env_id, headless=args.headless, log_dir=args.log_dir, config=cfg, seed=args.seed)
+            return Ur5eGraspEnv(
+                env_id=env_id, headless=args.headless, log_dir=args.log_dir, config=cfg, seed=args.seed,
+                num_envs=args.num_envs,
+            )
         return _init
 
     if args.num_envs > 1:
