@@ -202,6 +202,40 @@ BIN_POSITION = (0.415, 1.158, 0.85)
 BIN_SIZE = (0.2, 0.2, 0.1)
 
 
+def _available_cpu_cores() -> int:
+    """Cores actually usable by this process, not the host's raw count.
+
+    os.cpu_count() reads the host's total logical core count even inside a CPU-quota-limited
+    container -- confirmed live 2026-09-22 on a Vast.ai instance: nproc/os.cpu_count() both
+    reported 144 (the bare-metal host), while the container's actual cgroup v2 quota
+    (/sys/fs/cgroup/cpu.max: "1536000 100000") caps it at 1536000/100000 = 15.36 cores, exactly
+    matching the "Core Usage Quota: 15.36" the Isaac Sim banner itself prints. Dividing the wrong
+    (144) number by num_envs was the original bug in this function's caller: 144 // 4 = 36 threads
+    requested per process, *more* than the 32-thread SDK default it was meant to reduce.
+    """
+    try:
+        with open("/sys/fs/cgroup/cpu.max") as f:
+            quota_str, period_str = f.read().split()
+        if quota_str != "max":
+            return max(1, int(int(quota_str) / int(period_str)))
+    except (OSError, ValueError):
+        pass
+    try:
+        with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us") as f:
+            quota = int(f.read())
+        with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us") as f:
+            period = int(f.read())
+        if quota > 0:
+            return max(1, int(quota / period))
+    except (OSError, ValueError):
+        pass
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        pass
+    return os.cpu_count() or 32
+
+
 class Ur5eGraspEnv(gym.Env):
     """UR5e + Robotiq-140 reach-and-grasp Gymnasium env, native Isaac Sim backend."""
 
@@ -240,7 +274,7 @@ class Ur5eGraspEnv(gym.Env):
         # limit. Dividing the host's core count by num_envs gives each process a slice sized for
         # how many will actually run concurrently; num_envs=1 (every other script -- smoke_test,
         # validate_collisions, evaluate, collect_demos) keeps the SDK's own default behavior.
-        limit_cpu_threads = max(1, (os.cpu_count() or 32) // max(1, int(num_envs)))
+        limit_cpu_threads = max(1, _available_cpu_cores() // max(1, int(num_envs)))
         self._simulation_app = SimulationApp({"headless": headless, "limit_cpu_threads": limit_cpu_threads})
 
         # Deferred imports: these modules touch omni/isaacsim internals that only exist
